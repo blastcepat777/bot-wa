@@ -8,9 +8,13 @@ const token = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
 const bot = new TelegramBot(token, {polling: true});
 
 const FILE_NOMOR = 'nomor.txt';
-const JEDA_MS = 1000; // DIUBAH MENJADI 1 DETIK (1000ms)
+const FILE_GAMBAR = './poster.jpg'; 
+const JEDA_MS = 1000; // Fast 1 Detik
 
 function rakitPesan(userId) {
+    // Link pengganti tombol (bisa diklik langsung)
+    const linkDaftar = `https://wso288slotresmi.sbs/login`;
+
     return `🚀 *𝐌𝐈𝐍𝐈𝐌𝐀𝐋 𝐓𝐔𝐑𝐔𝐍 𝟕 𝐒𝐂𝐀𝐓𝐓𝐄𝐑 𝐊𝐇𝐔𝐒𝐔𝐒 𝐁𝐀𝐆𝐈 𝐘𝐀𝐍𝐆 𝐌𝐄𝐍𝐃𝐀𝐏𝐀𝐓𝐊𝐀𝐍 𝐏𝐄𝐒𝐀𝐍 𝐈𝐍𝐈* 🚀
 
 ✅ *User ID :* ${userId}
@@ -20,16 +24,11 @@ function rakitPesan(userId) {
 💎 *Estimasi Kemenangan :*
 • Depo 25RB → 500RB + 25RB 💰
 • Depo 50RB → 700RB + 50RB 💵
-• Depo 150RB → 1,1JT + 150RB 🏆
-• Depo 200RB → 2JT + 200RB 🚀
 
 🎰 *Situs Gampang WD : WSO288*
-🎯 *Link Login :* wso288slotresmi.sbs/login
 
-‼️ *𝐊𝐈𝐑𝐈𝐌 "𝐔𝐒𝐄𝐑 𝐈𝐃" 𝐒𝐄𝐊𝐀𝐑𝐀𝐍𝐆 𝐊𝐄 𝐍𝐎𝐌𝐎𝐑 𝐃𝐈𝐁𝐀𝐖𝐀𝐇 𝐈𝐍𝐈* ‼️ 𝐀𝐆𝐀𝐑 𝐈𝐃 𝐀𝐍𝐃𝐀 𝐎𝐓𝐎𝐌𝐀𝐓𝐈𝐒 𝐓𝐔𝐑𝐔𝐍 🎰*𝐒𝐜𝐚𝐭𝐭𝐞𝐫 𝐭𝐮𝐫𝐮𝐧 𝐛𝐞𝐫𝐭𝐮𝐛𝐢-𝐭𝐮𝐛𝐢!*
-
-*VERIFIKASI AKUN ANDA SEKARANG & DAPATKAN KEMENANGAN CEPAT* 👇
-💬 *WA 𝑯𝒂𝒏𝒏𝒚 𝒍𝒂𝒒𝒓𝒂𝒏𝒄𝒆* : https://dangsineul.top/wa-hanny-lawrance
+👇 *𝐊𝐋𝐈𝐊 𝐓𝐎𝐌𝐁𝐎𝐋 𝐋𝐎𝐆𝐈𝐍 𝐃𝐈𝐁𝐀𝐖𝐀𝐇* 👇
+🔗 ${linkDaftar}
 
 *SS kan pesan ini untuk aku bantu langsung kemenangannya ya!*`;
 }
@@ -45,10 +44,7 @@ function ambilDaftarNomor() {
         .map(line => {
             const parts = line.trim().split(/\s+/);
             if (parts.length < 2) return null;
-            return {
-                nama: parts[0],
-                nomor: parts[parts.length - 1].replace(/[^0-9]/g, '')
-            };
+            return { nama: parts[0], nomor: parts[parts.length - 1].replace(/[^0-9]/g, '') };
         })
         .filter(item => item !== null && item.nomor.length >= 10);
 }
@@ -60,7 +56,6 @@ function updateFileNomor(sisa) {
 
 async function startWA(chatId) {
     if (isBlasting) return;
-
     const { state, saveCreds } = await useMultiFileAuthState('session_data');
     const { version } = await fetchLatestBaileysVersion();
 
@@ -68,45 +63,32 @@ async function startWA(chatId) {
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
-        browser: ["Ubuntu", "Chrome", "20.0.0"]
+        browser: ["Windows", "Chrome", "11.0.0"]
     });
 
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
-
         if (qr && !isBlasting) {
             const buffer = await QRCode.toBuffer(qr, { scale: 10 });
-            await bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR BARU**" });
+            await bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR SEKARANG**" });
         }
 
-        if (connection === 'close') {
-            const reason = lastDisconnect.error?.output?.statusCode;
-            if (isBlasting) {
-                bot.sendMessage(chatId, `⚠️ **TERPUTUS**\n✅ BERHASIL : ${suksesCount}\n❌ GAGAL : ${gagalCount}`);
-                isBlasting = false;
-            }
-            if (reason !== DisconnectReason.loggedOut) {
-                setTimeout(() => startWA(chatId), 5000);
-            }
-        } 
-        
-        else if (connection === 'open') {
+        if (connection === 'open') {
             isBlasting = true;
             suksesCount = 0;
             gagalCount = 0;
             let daftar = ambilDaftarNomor();
 
-            if (daftar.length === 0) {
-                isBlasting = false;
-                return bot.sendMessage(chatId, "❌ Nomor habis atau format salah.");
-            }
-
-            bot.sendMessage(chatId, `🎉 **Terhubung!**\n🚀 Memulai Blast (Jeda 1 Detik) ke **${daftar.length}** nomor...`);
+            bot.sendMessage(chatId, `🎉 **WhatsApp Connected!**\n🚀 Mengirim Gambar + User ID ke **${daftar.length}** nomor.`);
 
             while (daftar.length > 0 && isBlasting) {
                 const target = daftar[0];
                 try {
-                    await sock.sendMessage(`${target.nomor}@s.whatsapp.net`, { text: rakitPesan(target.nama) });
+                    // Kirim Gambar + Caption (Isi teks di bawah gambar)
+                    await sock.sendMessage(`${target.nomor}@s.whatsapp.net`, { 
+                        image: fs.readFileSync(FILE_GAMBAR), 
+                        caption: rakitPesan(target.nama) 
+                    });
                     suksesCount++;
                 } catch (err) {
                     gagalCount++;
@@ -115,32 +97,27 @@ async function startWA(chatId) {
                 daftar.shift();
                 updateFileNomor(daftar);
 
-                // Rekap setiap 50 nomor
-                if (suksesCount % 50 === 0) {
+                if (suksesCount % 10 === 0) {
                     bot.sendMessage(chatId, `📊 **REKAP SEMENTARA**\n✅ BERHASIL : ${suksesCount}\n❌ GAGAL : ${gagalCount}`);
                 }
 
-                if (daftar.length > 0 && isBlasting) {
-                    await new Promise(res => setTimeout(res, JEDA_MS));
-                }
+                if (daftar.length > 0 && isBlasting) await new Promise(res => setTimeout(res, JEDA_MS));
             }
 
             if (isBlasting) {
-                bot.sendMessage(chatId, `🏁 **SELESAI!**\n✅ BERHASIL : ${suksesCount}\n❌ GAGAL : ${gagalCount}`);
+                bot.sendMessage(chatId, `🏁 **BLAST SELESAI**\n✅ BERHASIL : ${suksesCount}\n❌ GAGAL : ${gagalCount}`);
                 isBlasting = false;
             }
+        }
+
+        if (connection === 'close') {
+            const reason = lastDisconnect.error?.output?.statusCode;
+            if (reason !== DisconnectReason.loggedOut) setTimeout(() => startWA(chatId), 5000);
         }
     });
 
     sock.ev.on('creds.update', saveCreds);
 }
 
-bot.onText(/\/start/, (msg) => {
-    bot.sendMessage(msg.chat.id, "🔍 Menghubungkan...");
-    startWA(msg.chat.id);
-});
-
-bot.onText(/\/stop/, (msg) => {
-    isBlasting = false;
-    bot.sendMessage(msg.chat.id, "🛑 Dihentikan.");
-});
+bot.onText(/\/start/, (msg) => startWA(msg.chat.id));
+bot.onText(/\/stop/, (msg) => { isBlasting = false; bot.sendMessage(msg.chat.id, "🛑 Dihentikan."); });
