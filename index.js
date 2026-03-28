@@ -4,38 +4,38 @@ const QRCode = require('qrcode');
 const pino = require('pino');
 
 const token = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
-
-// Solusi 409 Conflict: Pastikan hanya ada satu koneksi polling
-const bot = new TelegramBot(token, {
-    polling: {
-        autoStart: true,
-        params: { timeout: 10 }
-    }
-});
+const bot = new TelegramBot(token, {polling: true});
 
 async function startWhatsApp(chatId) {
-    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
+    // 1. Setup Auth (Sesi Login)
+    const { state, saveCreds } = await useMultiFileAuthState('auth_session');
     
+    // 2. Buat Koneksi Baileys (Tanpa printQRInTerminal agar pesan kuning hilang)
     const sock = makeWASocket({
         auth: state,
         logger: pino({ level: 'silent' }),
-        browser: ["Ubuntu", "Chrome", "20.0.0"] 
+        browser: ["Ubuntu", "Chrome", "20.0.0"]
     });
 
+    // 3. Tangkap Perubahan Koneksi
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
 
+        // JIKA QR CODE MUNCUL
         if (qr) {
-            console.log("👉 QR Ditemukan! Mengirim ke Telegram...");
+            console.log("✅ QR Ditemukan! Mengkonversi ke Gambar...");
             try {
-                const qrBuffer = await QRCode.toBuffer(qr);
-                // Kirim ulang barcode setiap kali muncul yang baru
+                // Ubah QR String jadi Gambar (Buffer)
+                const qrBuffer = await QRCode.toBuffer(qr, { scale: 8 });
+                
+                // Kirim ke Telegram
                 await bot.sendPhoto(chatId, qrBuffer, {
-                    caption: "🚀 **BARCODE PAIRING ANDA**\n\nSilakan scan segera (berlaku 20 detik).\nJika sudah kadaluarsa, ketik /start lagi.",
+                    caption: "📸 **SCAN BARCODE INI SEGERA**\n\nBuka WhatsApp > Perangkat Tertaut > Tautkan Perangkat.\n\n_Barcode akan berganti otomatis jika belum di-scan._",
                     parse_mode: 'Markdown'
                 });
+                console.log("🚀 Barcode berhasil dikirim ke Telegram!");
             } catch (err) {
-                console.log("❌ Gagal kirim gambar: " + err.message);
+                console.error("❌ Gagal mengirim QR:", err.message);
             }
         }
 
@@ -43,25 +43,17 @@ async function startWhatsApp(chatId) {
             const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
             if (shouldReconnect) startWhatsApp(chatId);
         } else if (connection === 'open') {
-            bot.sendMessage(chatId, "✅ **WhatsApp Terhubung!**");
+            bot.sendMessage(chatId, "🎉 **BERHASIL!** WhatsApp Anda sudah terhubung.");
         }
     });
 
     sock.ev.on('creds.update', saveCreds);
 }
 
-// Menangani error polling secara halus
-bot.on('polling_error', (error) => {
-    if (error.code === 'ETELEGRAM' && error.message.includes('409 Conflict')) {
-        console.log("⚠️ Konflik Polling: Mencoba menstabilkan koneksi...");
-    } else {
-        console.error(error);
-    }
-});
-
+// Handler Tombol Start
 bot.onText(/\/start/, (msg) => {
+    bot.sendMessage(msg.chat.id, "⏳ Menghubungkan ke server WhatsApp... Mohon tunggu gambar barcode muncul.");
     startWhatsApp(msg.chat.id);
-    bot.sendMessage(msg.chat.id, "⏳ Memulai sesi... Barcode akan muncul dalam beberapa detik.");
 });
 
-console.log("Bot Baileys-Telegram Aktif di Railway!");
+console.log("--- BOT SUDAH AKTIF ---");
