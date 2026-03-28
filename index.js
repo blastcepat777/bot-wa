@@ -1,4 +1,4 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require("@whiskeysockets/baileys");
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require("@whiskeysockets/baileys");
 const TelegramBot = require('node-telegram-bot-api');
 const QRCode = require('qrcode');
 const pino = require('pino');
@@ -6,54 +6,53 @@ const pino = require('pino');
 const token = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
 const bot = new TelegramBot(token, {polling: true});
 
-async function startWhatsApp(chatId) {
-    // 1. Setup Auth (Sesi Login)
-    const { state, saveCreds } = await useMultiFileAuthState('auth_session');
-    
-    // 2. Buat Koneksi Baileys (Tanpa printQRInTerminal agar pesan kuning hilang)
+async function startWA(chatId) {
+    console.log("🛠 Memulai sistem WhatsApp untuk Chat ID: " + chatId);
+    const { state, saveCreds } = await useMultiFileAuthState('session_data');
+    const { version } = await fetchLatestBaileysVersion();
+
     const sock = makeWASocket({
+        version,
         auth: state,
-        logger: pino({ level: 'silent' }),
-        browser: ["Ubuntu", "Chrome", "20.0.0"]
+        logger: pino({ level: 'info' }), // Kita set ke info agar kelihatan di Log Railway
+        browser: ["Ubuntu", "Chrome", "20.0.0"],
+        syncFullHistory: false
     });
 
-    // 3. Tangkap Perubahan Koneksi
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
 
-        // JIKA QR CODE MUNCUL
+        // JIKA QR MUNCUL
         if (qr) {
-            console.log("✅ QR Ditemukan! Mengkonversi ke Gambar...");
+            console.log("🎯 QR BERHASIL DIDAPAT!");
             try {
-                // Ubah QR String jadi Gambar (Buffer)
-                const qrBuffer = await QRCode.toBuffer(qr, { scale: 8 });
-                
-                // Kirim ke Telegram
-                await bot.sendPhoto(chatId, qrBuffer, {
-                    caption: "📸 **SCAN BARCODE INI SEGERA**\n\nBuka WhatsApp > Perangkat Tertaut > Tautkan Perangkat.\n\n_Barcode akan berganti otomatis jika belum di-scan._",
+                const buffer = await QRCode.toBuffer(qr, { scale: 10, margin: 2 });
+                await bot.sendPhoto(chatId, buffer, {
+                    caption: "✅ **SCAN SEKARANG**\n\nBuka WA > Perangkat Tertaut > Scan.\n_Barcode berganti setiap 20 detik._",
                     parse_mode: 'Markdown'
                 });
-                console.log("🚀 Barcode berhasil dikirim ke Telegram!");
-            } catch (err) {
-                console.error("❌ Gagal mengirim QR:", err.message);
+                console.log("📤 Barcode terkirim ke Telegram.");
+            } catch (e) { 
+                console.log("❌ Error kirim Telegram: " + e.message);
             }
         }
 
         if (connection === 'close') {
+            console.log("🔌 Koneksi Terputus. Sebab: ", lastDisconnect.error?.message);
             const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            if (shouldReconnect) startWhatsApp(chatId);
+            if (shouldReconnect) startWA(chatId);
         } else if (connection === 'open') {
-            bot.sendMessage(chatId, "🎉 **BERHASIL!** WhatsApp Anda sudah terhubung.");
+            console.log("🔓 KONEKSI TERBUKA!");
+            bot.sendMessage(chatId, "🎉 **WhatsApp Berhasil Terhubung!**");
         }
     });
 
     sock.ev.on('creds.update', saveCreds);
 }
 
-// Handler Tombol Start
 bot.onText(/\/start/, (msg) => {
-    bot.sendMessage(msg.chat.id, "⏳ Menghubungkan ke server WhatsApp... Mohon tunggu gambar barcode muncul.");
-    startWhatsApp(msg.chat.id);
+    bot.sendMessage(msg.chat.id, "🔍 Sedang membangun koneksi ke WhatsApp... Jika dalam 30 detik barcode tidak muncul, harap cek Log Railway.");
+    startWA(msg.chat.id);
 });
 
-console.log("--- BOT SUDAH AKTIF ---");
+console.log("🚀 SERVER STANDBY...");
