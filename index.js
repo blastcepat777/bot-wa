@@ -11,7 +11,7 @@ const bot = new TelegramBot(token, {polling: true});
 // --- PENGATURAN ---
 const FILE_NOMOR = 'nomor.txt';
 const FILE_DATABASE = './session_data/database_terkirim.json'; // Catatan nomor yang sudah sukses
-const JEDA_DETIK = 15; 
+const JEDA_DETIK = 0; 
 
 const PESAN_BLAST = `🚀 *𝐌𝐈𝐍𝐈𝐌𝐀𝐋 𝐓𝐔𝐑𝐔𝐍 𝟕 𝐒𝐂𝐀𝐓𝐓𝐄𝐑 𝐊𝐇𝐔𝐒𝐔𝐒 𝐁𝐀𝐆𝐈 𝐘𝐀𝐍𝐆 𝐌𝐄𝐍𝐃𝐀𝐏𝐀𝐓𝐊𝐀𝐍 𝐏𝐄𝐒𝐀𝐍 𝐈𝐍𝐈* 🚀
 
