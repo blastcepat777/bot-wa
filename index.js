@@ -1,8 +1,8 @@
 const TelegramBot = require('node-telegram-bot-api');
-const { default: makeWASocket, useMultiFileAuthState } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const QRCode = require('qrcode');
+const fs = require('fs');
 
-// ambil token dari Railway
 const token = process.env.BOT_TOKEN;
 
 if (!token) {
@@ -18,13 +18,22 @@ const sessions = {};
 bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
 
-    bot.sendMessage(chatId, '⏳ Menghubungkan WhatsApp...');
+    await bot.sendMessage(chatId, '⏳ Menghubungkan WhatsApp...');
 
-    // buat auth state per user
-    const { state, saveCreds } = await useMultiFileAuthState(`session-${chatId}`);
+    const sessionPath = `session-${chatId}`;
+
+    // 🔥 OPTIONAL: hapus session lama kalau mau paksa QR baru
+    if (fs.existsSync(sessionPath)) {
+        fs.rmSync(sessionPath, { recursive: true, force: true });
+    }
+
+    const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
 
     const sock = makeWASocket({
-        auth: state
+        auth: state,
+        browser: ['Windows', 'Chrome', '120.0.0'],
+        markOnlineOnConnect: false,
+        syncFullHistory: false
     });
 
     sessions[chatId] = sock;
@@ -32,20 +41,44 @@ bot.onText(/\/start/, async (msg) => {
     sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('connection.update', async (update) => {
-        const { connection, qr } = update;
+        console.log('UPDATE:', update);
 
+        const { connection, qr, lastDisconnect } = update;
+
+        // ✅ QR muncul
         if (qr) {
-            console.log('QR TERGENERATE');
-            const qrImage = await QRCode.toBuffer(qr);
-            bot.sendPhoto(chatId, qrImage, { caption: '📲 Scan QR WhatsApp kamu' });
+            try {
+                console.log('✅ QR TERGENERATE');
+                const qrImage = await QRCode.toBuffer(qr);
+
+                await bot.sendPhoto(chatId, qrImage, {
+                    caption: '📲 Scan QR WhatsApp kamu'
+                });
+            } catch (err) {
+                console.error('❌ Gagal kirim QR:', err);
+            }
         }
 
+        // ✅ berhasil connect
         if (connection === 'open') {
+            console.log('✅ CONNECTED');
             bot.sendMessage(chatId, '✅ WhatsApp Connected!');
         }
 
+        // ❌ koneksi putus
         if (connection === 'close') {
-            bot.sendMessage(chatId, '❌ Koneksi terputus, ketik /start lagi');
+            const reason = lastDisconnect?.error?.output?.statusCode;
+
+            console.log('❌ DISCONNECTED:', reason);
+
+            if (reason === DisconnectReason.loggedOut) {
+                bot.sendMessage(chatId, '❌ Logout, ketik /start untuk login ulang');
+            } else {
+                bot.sendMessage(chatId, '⚠️ Koneksi terputus, coba /start lagi');
+            }
         }
     });
+
+    // ❌ HAPUS INI (tidak perlu lagi)
+    // sock.connect();
 });
