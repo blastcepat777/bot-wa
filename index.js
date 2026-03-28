@@ -9,7 +9,7 @@ const bot = new TelegramBot(token, {polling: true});
 
 const FILE_NOMOR = 'nomor.txt';
 const FILE_DATABASE = './session_data/db_sukses.json'; 
-const JEDA_DETIK = 15; 
+const JEDA_DETIK = 0; 
 
 // Fungsi untuk merakit pesan personal
 function rakitPesan(userId) {
