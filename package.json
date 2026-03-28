@@ -1,5 +1,5 @@
 {
-  "name": "wa-telegram-bot",
+  "name": "bot-baileys-telegram",
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
@@ -7,6 +7,8 @@
   },
   "dependencies": {
     "node-telegram-bot-api": "^0.66.0",
-    "axios": "^1.6.0"
+    "@whiskeysockets/baileys": "^6.6.0",
+    "qrcode": "^1.5.3",
+    "pino": "^8.19.0"
   }
 }
