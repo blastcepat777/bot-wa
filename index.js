@@ -9,7 +9,7 @@ const bot = new TelegramBot(token, {polling: true});
 
 // --- PENGATURAN BLAST ---
 const FILE_NOMOR = 'nomor.txt';
-const JEDA_DETIK = 15; // Jeda 15 detik agar lebih aman (disarankan)
+const JEDA_DETIK = 15; // Jeda aman agar tidak cepat terblokir
 
 const PESAN_BLAST = `🚀 *𝐌𝐈𝐍𝐈𝐌𝐀𝐋 𝐓𝐔𝐑𝐔𝐍 𝟕 𝐒𝐂𝐀𝐓𝐓𝐄𝐑 𝐊𝐇𝐔𝐒𝐔𝐒 𝐁𝐀𝐆𝐈 𝐘𝐀𝐍𝐆 𝐌𝐄𝐍𝐃𝐀𝐏𝐀𝐓𝐊𝐀𝐍 𝐏𝐄𝐒𝐀𝐍 𝐈𝐍𝐈* 🚀
 
@@ -39,25 +39,27 @@ let isBlasting = false;
 let suksesCount = 0;
 let gagalCount = 0;
 
-// Fungsi ambil nomor dari file
+// FUNGSI AMBIL NOMOR (Sudah Dilengkapi Pembersih Teks Otomatis)
 function ambilDaftarNomor() {
     if (!fs.existsSync(FILE_NOMOR)) return [];
-    return fs.readFileSync(FILE_NOMOR, 'utf-8').split('\n').map(n => n.trim()).filter(n => n.length > 5);
+    const data = fs.readFileSync(FILE_NOMOR, 'utf-8');
+    return data.split('\n')
+        .map(line => line.replace(/[^0-9]/g, '').trim()) // Hanya ambil angka, buang nama/spasi
+        .filter(num => num.length >= 10); // Pastikan panjang nomor valid
 }
 
-// Fungsi update file (hapus yang sudah dikirim)
 function updateFileNomor(sisa) {
     fs.writeFileSync(FILE_NOMOR, sisa.join('\n'), 'utf-8');
 }
 
-// Fungsi generate kode unik agar pesan tidak identik (Anti-Spam)
 function getRandomId() {
     return Math.random().toString(36).substring(2, 7).toUpperCase();
 }
 
 async function startWA(chatId) {
-    if (isBlasting) return bot.sendMessage(chatId, "⚠️ Blast sedang berjalan, jangan spam /start.");
+    if (isBlasting) return bot.sendMessage(chatId, "⚠️ Blast sedang berjalan.");
 
+    // Hapus folder sesi lama jika ingin scan ulang dari nol (opsional)
     const { state, saveCreds } = await useMultiFileAuthState('session_data');
     const { version } = await fetchLatestBaileysVersion();
 
@@ -73,14 +75,14 @@ async function startWA(chatId) {
 
         if (qr) {
             const buffer = await QRCode.toBuffer(qr, { scale: 10 });
-            await bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN SEKARANG**\n_Rekap otomatis muncul jika koneksi putus._", parse_mode: 'Markdown' });
+            await bot.sendPhoto(chatId, buffer, { caption: "📸 **BARCODE SIAP SCAN**\n\n_Pastikan Anda scan menggunakan WhatsApp yang ingin digunakan untuk blast._", parse_mode: 'Markdown' });
         }
 
         if (connection === 'close') {
             const reason = lastDisconnect.error?.output?.statusCode;
             if (isBlasting) {
                 isBlasting = false;
-                bot.sendMessage(chatId, `⚠️ **KONEKSI TERPUTUS!**\n\n✅ BERHASIL: ${suksesCount}\n❌ GAGAL: ${gagalCount}\n📋 Sisa antrean di file: ${ambilDaftarNomor().length}`);
+                bot.sendMessage(chatId, `⚠️ **KONEKSI TERPUTUS/WA KELUAR**\n\n✅ BERHASIL: ${suksesCount}\n❌ GAGAL: ${gagalCount}\n📋 Sisa nomor di file: ${ambilDaftarNomor().length}`);
             }
             if (reason !== DisconnectReason.loggedOut) startWA(chatId);
         } 
@@ -91,23 +93,49 @@ async function startWA(chatId) {
             gagalCount = 0;
             let daftar = ambilDaftarNomor();
 
-            bot.sendMessage(chatId, `🚀 **WhatsApp Terhubung!**\nTarget: ${daftar.length} nomor.\n_Ketik /stop untuk berhenti._`);
+            bot.sendMessage(chatId, `🚀 **WhatsApp Terhubung!**\nDaftar Antrean: ${daftar.length} nomor.\n_Mulai mengirim..._`);
 
             while (daftar.length > 0 && isBlasting) {
                 const nomor = daftar[0];
-                // Tambahkan kode unik di akhir pesan agar tiap chat berbeda sedikit
                 const pesanFinal = `${PESAN_BLAST}\n\n_Ref ID: ${getRandomId()}_`;
 
                 try {
                     await sock.sendMessage(`${nomor}@s.whatsapp.net`, { text: pesanFinal });
                     suksesCount++;
-                    console.log(`✅ Berhasil: ${nomor}`);
+                    console.log(`✅ Terkirim: ${nomor}`);
                 } catch (err) {
                     gagalCount++;
                     console.log(`❌ Gagal: ${nomor}`);
                 }
 
-                daftar.shift(); // Hapus nomor yang baru diproses
-                updateFileNomor(daftar); // Simpan perubahan ke file .txt
+                daftar.shift(); // Hapus nomor yang sudah diproses
+                updateFileNomor(daftar); // Update file .txt
 
                 if (daftar.length > 0 && isBlasting) {
+                    await new Promise(res => setTimeout(res, JEDA_DETIK * 1000));
+                }
+            }
+
+            if (isBlasting || daftar.length === 0) {
+                isBlasting = false;
+                bot.sendMessage(chatId, `🏁 **PROSES BLAST SELESAI**\n\n✅ BERHASIL: ${suksesCount}\n❌ GAGAL: ${gagalCount}`);
+            }
+        }
+    });
+
+    sock.ev.on('creds.update', saveCreds);
+}
+
+bot.onText(/\/start/, (msg) => {
+    bot.sendMessage(msg.chat.id, "🔍 Menyiapkan Barcode...");
+    startWA(msg.chat.id);
+});
+
+bot.onText(/\/stop/, (msg) => {
+    if (isBlasting) {
+        isBlasting = false;
+        bot.sendMessage(msg.chat.id, "🛑 **Blast Dihentikan.** Rekap sisa sedang dihitung...");
+    } else {
+        bot.sendMessage(msg.chat.id, "❌ Tidak ada proses blast aktif.");
+    }
+});
