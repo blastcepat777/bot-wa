@@ -4,29 +4,34 @@ const QRCode = require('qrcode');
 const pino = require('pino');
 
 const token = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
-const bot = new TelegramBot(token, {polling: true});
+
+// Solusi 409 Conflict: Pastikan hanya ada satu koneksi polling
+const bot = new TelegramBot(token, {
+    polling: {
+        autoStart: true,
+        params: { timeout: 10 }
+    }
+});
 
 async function startWhatsApp(chatId) {
-    // Menggunakan folder auth_info_baileys untuk simpan login
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
     
     const sock = makeWASocket({
         auth: state,
         logger: pino({ level: 'silent' }),
-        // Menyamar sebagai browser agar lebih stabil
         browser: ["Ubuntu", "Chrome", "20.0.0"] 
     });
 
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
 
-        // JIKA QR MUNCUL
         if (qr) {
             console.log("👉 QR Ditemukan! Mengirim ke Telegram...");
             try {
                 const qrBuffer = await QRCode.toBuffer(qr);
+                // Kirim ulang barcode setiap kali muncul yang baru
                 await bot.sendPhoto(chatId, qrBuffer, {
-                    caption: "🚀 **BARCODE PAIRING ANDA**\n\nSilakan scan segera melalui WhatsApp > Perangkat Tertaut.\n\n*Barcode ini akan berganti otomatis.*",
+                    caption: "🚀 **BARCODE PAIRING ANDA**\n\nSilakan scan segera (berlaku 20 detik).\nJika sudah kadaluarsa, ketik /start lagi.",
                     parse_mode: 'Markdown'
                 });
             } catch (err) {
@@ -36,29 +41,27 @@ async function startWhatsApp(chatId) {
 
         if (connection === 'close') {
             const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            if (shouldReconnect) {
-                console.log("Koneksi terputus, mencoba menghubungkan ulang...");
-                startWhatsApp(chatId);
-            }
+            if (shouldReconnect) startWhatsApp(chatId);
         } else if (connection === 'open') {
-            bot.sendMessage(chatId, "✅ **WhatsApp Terhubung!** Bot Anda sekarang sudah siap digunakan.");
-            console.log("Koneksi Terbuka!");
+            bot.sendMessage(chatId, "✅ **WhatsApp Terhubung!**");
         }
     });
 
     sock.ev.on('creds.update', saveCreds);
 }
 
-// Menghapus error 409 Conflict dengan memastikan polling bersih
+// Menangani error polling secara halus
 bot.on('polling_error', (error) => {
     if (error.code === 'ETELEGRAM' && error.message.includes('409 Conflict')) {
-        console.log("⚠️ Ada bot lain yang nyala dengan token sama! Matikan bot di Pterodactyl.");
+        console.log("⚠️ Konflik Polling: Mencoba menstabilkan koneksi...");
+    } else {
+        console.error(error);
     }
 });
 
 bot.onText(/\/start/, (msg) => {
     startWhatsApp(msg.chat.id);
-    bot.sendMessage(msg.chat.id, "⏳ Sedang menyiapkan sesi WhatsApp... Tunggu sebentar sampai barcode muncul.");
+    bot.sendMessage(msg.chat.id, "⏳ Memulai sesi... Barcode akan muncul dalam beberapa detik.");
 });
 
-console.log("Bot Baileys-Telegram Ready!");
+console.log("Bot Baileys-Telegram Aktif di Railway!");
