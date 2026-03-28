@@ -3,12 +3,15 @@ const TelegramBot = require('node-telegram-bot-api');
 const QRCode = require('qrcode');
 const pino = require('pino');
 const fs = require('fs');
+const path = require('path');
 
 const token = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
 const bot = new TelegramBot(token, {polling: true});
 
+// --- PENGATURAN ---
 const FILE_NOMOR = 'nomor.txt';
-const JEDA_DETIK = 0; 
+const FILE_DATABASE = './session_data/database_terkirim.json'; // Catatan nomor yang sudah sukses
+const JEDA_DETIK = 15; 
 
 const PESAN_BLAST = `🚀 *𝐌𝐈𝐍𝐈𝐌𝐀𝐋 𝐓𝐔𝐑𝐔𝐍 𝟕 𝐒𝐂𝐀𝐓𝐓𝐄𝐑 𝐊𝐇𝐔𝐒𝐔𝐒 𝐁𝐀𝐆𝐈 𝐘𝐀𝐍𝐆 𝐌𝐄𝐍𝐃𝐀𝐏𝐀𝐓𝐊𝐀𝐍 𝐏𝐄𝐒𝐀𝐍 𝐈𝐍𝐈* 🚀
 
@@ -32,25 +35,46 @@ const PESAN_BLAST = `🚀 *𝐌𝐈𝐍𝐈𝐌𝐀𝐋 𝐓𝐔𝐑𝐔𝐍 �
 
 *SS kan pesan ini untuk aku bantu langsung kemenangannya ya!*`;
 
+// --------------------------
+
 let isBlasting = false;
 let suksesCount = 0;
 let gagalCount = 0;
 
-function ambilDaftarNomor() {
+// Fungsi Mengecek Database Nomor yang Sudah Terkirim
+function ambilAntreanBaru() {
     if (!fs.existsSync(FILE_NOMOR)) return [];
-    const data = fs.readFileSync(FILE_NOMOR, 'utf-8');
-    // Hanya ambil baris yang isinya angka saja
-    return data.split('\n')
+    
+    // Baca semua nomor dari nomor.txt
+    const dataRaw = fs.readFileSync(FILE_NOMOR, 'utf-8');
+    const semuaNomor = dataRaw.split('\n')
         .map(n => n.replace(/[^0-9]/g, '').trim())
         .filter(n => n.length >= 10);
+
+    // Baca database nomor yang sudah sukses (skip list)
+    let terkirim = [];
+    if (fs.existsSync(FILE_DATABASE)) {
+        terkirim = JSON.parse(fs.readFileSync(FILE_DATABASE, 'utf-8'));
+    }
+
+    // Filter: Hanya ambil nomor yang BELUM ADA di database terkirim
+    return semuaNomor.filter(n => !terkirim.includes(n));
 }
 
-function updateFileNomor(sisa) {
-    fs.writeFileSync(FILE_NOMOR, sisa.join('\n'), 'utf-8');
+// Fungsi Mencatat Nomor yang Berhasil Dikirim
+function simpanKeDatabase(nomor) {
+    let terkirim = [];
+    if (fs.existsSync(FILE_DATABASE)) {
+        terkirim = JSON.parse(fs.readFileSync(FILE_DATABASE, 'utf-8'));
+    }
+    if (!terkirim.includes(nomor)) {
+        terkirim.push(nomor);
+        fs.writeFileSync(FILE_DATABASE, JSON.stringify(terkirim), 'utf-8');
+    }
 }
 
 async function startWA(chatId) {
-    if (isBlasting) return;
+    if (isBlasting) return bot.sendMessage(chatId, "⚠️ Blast sedang berjalan.");
 
     const { state, saveCreds } = await useMultiFileAuthState('session_data');
     const { version } = await fetchLatestBaileysVersion();
@@ -67,14 +91,14 @@ async function startWA(chatId) {
 
         if (qr) {
             const buffer = await QRCode.toBuffer(qr, { scale: 10 });
-            await bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN BARCODE BARU**" });
+            await bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN ULANG**" });
         }
 
         if (connection === 'close') {
             const reason = lastDisconnect.error?.output?.statusCode;
             if (isBlasting) {
-                bot.sendMessage(chatId, `⚠️ **TERPUTUS**\n✅ Berhasil: ${suksesCount}\n❌ Gagal: ${gagalCount}`);
                 isBlasting = false;
+                bot.sendMessage(chatId, `⚠️ **KONEKSI TERPUTUS**\n✅ Sukses: ${suksesCount}\n❌ Gagal: ${gagalCount}`);
             }
             if (reason !== DisconnectReason.loggedOut) startWA(chatId);
         } 
@@ -83,37 +107,38 @@ async function startWA(chatId) {
             isBlasting = true;
             suksesCount = 0;
             gagalCount = 0;
-            let daftar = ambilDaftarNomor();
+            
+            // Ambil nomor yang belum pernah dikirim
+            let antrean = ambilAntreanBaru();
 
-            if (daftar.length === 0) {
+            if (antrean.length === 0) {
                 isBlasting = false;
-                return bot.sendMessage(chatId, "❌ File `nomor.txt` kosong atau format salah.");
+                return bot.sendMessage(chatId, "✅ Tidak ada nomor baru. Semua nomor di file sudah pernah dikirim sebelumnya.");
             }
 
-            bot.sendMessage(chatId, `🎉 **WhatsApp Terhubung!**\n🚀 Memulai Blast ke **${daftar.length}** nomor...`);
+            bot.sendMessage(chatId, `🚀 WhatsApp Terhubung!\n🎯 Target Baru: **${antrean.length}** nomor.\n_(Otomatis skip nomor yang sudah sukses sebelumnya)_`);
 
-            while (daftar.length > 0 && isBlasting) {
-                const nomor = daftar[0];
+            for (const nomor of antrean) {
+                if (!isBlasting) break;
+
                 try {
                     await sock.sendMessage(`${nomor}@s.whatsapp.net`, { text: PESAN_BLAST });
                     suksesCount++;
-                    console.log(`✅ ${nomor}`);
+                    simpanKeDatabase(nomor); // Catat nomor ini agar tidak dikirim lagi selamanya
+                    console.log(`✅ Berhasil: ${nomor}`);
                 } catch (err) {
                     gagalCount++;
-                    console.log(`❌ ${nomor}`);
+                    console.log(`❌ Gagal: ${nomor}`);
                 }
 
-                daftar.shift();
-                updateFileNomor(daftar);
-
-                if (daftar.length > 0 && isBlasting) {
+                if (isBlasting) {
                     await new Promise(res => setTimeout(res, JEDA_DETIK * 1000));
                 }
             }
 
             if (isBlasting) {
-                bot.sendMessage(chatId, `🏁 **SELESAI!**\n✅ Berhasil: ${suksesCount}\n❌ Gagal: ${gagalCount}`);
                 isBlasting = false;
+                bot.sendMessage(chatId, `🏁 **BLAST SELESAI**\n✅ Berhasil: ${suksesCount}\n❌ Gagal: ${gagalCount}`);
             }
         }
     });
@@ -122,11 +147,11 @@ async function startWA(chatId) {
 }
 
 bot.onText(/\/start/, (msg) => {
-    bot.sendMessage(msg.chat.id, "🔍 Memulai... Mohon tunggu barcode.");
+    bot.sendMessage(msg.chat.id, "🔍 Menyiapkan Sesi...");
     startWA(msg.chat.id);
 });
 
 bot.onText(/\/stop/, (msg) => {
     isBlasting = false;
-    bot.sendMessage(msg.chat.id, "🛑 Blast dihentikan.");
+    bot.sendMessage(msg.chat.id, "🛑 Menghentikan Blast...");
 });
