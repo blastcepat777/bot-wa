@@ -12,6 +12,9 @@ const PESAN_BLAST = "Halo! Ini adalah pesan blast otomatis setelah scan. 🚀";
 const JEDA_DETIK = 5; // Jeda antar pesan agar tidak kena Banned
 // ---------------------------------------
 
+// Variabel Kontrol
+let isBlasting = false;
+
 async function startWA(chatId) {
     const { state, saveCreds } = await useMultiFileAuthState('session_data');
     const { version } = await fetchLatestBaileysVersion();
@@ -40,10 +43,18 @@ async function startWA(chatId) {
             const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
             if (shouldReconnect) startWA(chatId);
         } else if (connection === 'open') {
-            bot.sendMessage(chatId, "🎉 **WhatsApp Terhubung!** Memulai proses Blast otomatis...");
+            isBlasting = true; // Set status sedang membroadcast
+            bot.sendMessage(chatId, "🎉 **WhatsApp Terhubung!** Memulai proses Blast otomatis...\n\n_Ketik /stop jika ingin membatalkan._");
             
             // --- PROSES BLAST DIMULAI ---
             for (const nomor of DAFTAR_NOMOR) {
+                // CEK APAKAH USER MENEKAN STOP
+                if (!isBlasting) {
+                    bot.sendMessage(chatId, "🛑 **Blast Dihentikan Paksa.**");
+                    console.log("Blast distop oleh user.");
+                    break; // Keluar dari perulangan
+                }
+
                 try {
                     const jid = `${nomor}@s.whatsapp.net`;
                     await sock.sendMessage(jid, { text: PESAN_BLAST });
@@ -55,16 +66,31 @@ async function startWA(chatId) {
                     console.log(`❌ Gagal ke ${nomor}: ${err.message}`);
                 }
             }
-            bot.sendMessage(chatId, "🏁 **Blast Selesai!** Semua nomor telah dikirim.");
+
+            if (isBlasting) {
+                isBlasting = false;
+                bot.sendMessage(chatId, "🏁 **Blast Selesai!** Semua nomor telah dikirim.");
+            }
         }
     });
 
     sock.ev.on('creds.update', saveCreds);
 }
 
+// Handler perintah /start
 bot.onText(/\/start/, (msg) => {
     bot.sendMessage(msg.chat.id, "🔍 Sedang menyiapkan Barcode...");
     startWA(msg.chat.id);
+});
+
+// Handler perintah /stop
+bot.onText(/\/stop/, (msg) => {
+    if (isBlasting) {
+        isBlasting = false;
+        bot.sendMessage(msg.chat.id, "⏳ Sedang menghentikan antrean pesan... mohon tunggu.");
+    } else {
+        bot.sendMessage(msg.chat.id, "❌ Tidak ada proses blast yang sedang berjalan.");
+    }
 });
 
 console.log("🚀 Server Blast Standby...");
