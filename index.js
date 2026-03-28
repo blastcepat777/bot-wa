@@ -7,9 +7,9 @@ const token = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
 const bot = new TelegramBot(token, {polling: true});
 
 // --- PENGATURAN BLAST (UBAH DI SINI) ---
-const DAFTAR_NOMOR = ["628123456789", "628987654321"]; // Tambahkan nomor tujuan di sini
+const DAFTAR_NOMOR = ["6285219094574", "628987654321"]; // Tambahkan nomor tujuan di sini
 const PESAN_BLAST = "Halo! Ini adalah pesan blast otomatis setelah scan. 🚀";
-const JEDA_DETIK = 5; // Jeda antar pesan agar tidak kena Banned
+const JEDA_DETIK = 0; // Fast tanpa jeda
 // ---------------------------------------
 
 async function startWA(chatId) {
