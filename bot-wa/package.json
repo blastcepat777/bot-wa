@@ -1,2 +1,0 @@
-npm init -y
-npm install @whiskeysockets/baileys node-telegram-bot-api qrcode-terminal
