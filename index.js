@@ -2,88 +2,82 @@ const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLat
 const TelegramBot = require('node-telegram-bot-api');
 const QRCode = require('qrcode');
 const pino = require('pino');
-const fs = require('fs');
 
 const token = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
 const bot = new TelegramBot(token, {polling: true});
 
-// --- KONFIGURASI BLAST ---
-const DAFTAR_NOMOR = ["6285219094574", "628987654321"]; // Tambahkan nomor tujuan di sini
-const PESAN_BLAST = "Halo! Ini adalah pesan blast otomatis setelah scan. 🚀";
-const JEDA_DETIK = 7; // Jeda lebih lama (7 detik) agar lebih aman dari Banned
+// --- PENGATURAN BLAST ---
+const DAFTAR_NOMOR = ["628123456789", "628987654321"]; // Ganti nomor di sini
+const PESAN_BLAST = "Halo! Ini adalah pesan blast otomatis. 🚀";
+const JEDA_DETIK = 7; 
 // --------------------------
 
 async function startWA(chatId) {
-    const sessionFolder = 'session_data';
-
-    // RESET SESI SETIAP KALI /START (Agar pasti muncul Barcode baru)
-    if (fs.existsSync(sessionFolder)) {
-        console.log("Menghapus sesi lama agar barcode baru muncul...");
-        fs.rmSync(sessionFolder, { recursive: true, force: true });
-    }
-
-    const { state, saveCreds } = await useMultiFileAuthState(sessionFolder);
+    // Kita gunakan folder berbeda 'session_new' agar bersih
+    const { state, saveCreds } = await useMultiFileAuthState('session_new');
     const { version } = await fetchLatestBaileysVersion();
 
     const sock = makeWASocket({
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
-        browser: ["Ubuntu", "Chrome", "20.0.0"]
+        browser: ["Ubuntu", "Chrome", "20.0.0"],
+        // Menambahkan opsi ini agar koneksi lebih stabil
+        connectTimeoutMs: 60000,
+        defaultQueryTimeoutMs: 0,
     });
 
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
 
-        // 1. KIRIM BARCODE JIKA MUNCUL
+        // 1. Tampilkan Barcode
         if (qr) {
-            console.log("🎯 QR Didapat!");
+            console.log("🎯 Barcode ditemukan, mengirim ke Telegram...");
             try {
                 const buffer = await QRCode.toBuffer(qr, { scale: 10 });
                 await bot.sendPhoto(chatId, buffer, {
-                    caption: "📸 **BARCODE BARU SIAP SCAN**\n\nSilakan scan melalui WhatsApp HP Anda.\n_Begitu terhubung, blast akan otomatis jalan._",
+                    caption: "📸 **SCAN BARCODE INI**\n\nSilakan scan untuk memulai Blast otomatis.",
                     parse_mode: 'Markdown'
                 });
-            } catch (e) { console.log("Gagal kirim QR ke Telegram"); }
+            } catch (e) { console.log("Gagal kirim gambar ke Telegram"); }
         }
 
-        // 2. JIKA TERPUTUS
+        // 2. Cek Koneksi
         if (connection === 'close') {
-            const reason = lastDisconnect.error?.output?.statusCode;
-            if (reason !== DisconnectReason.loggedOut) {
-                // Reconnect otomatis jika bukan karena Logout
+            const statusCode = lastDisconnect.error?.output?.statusCode;
+            console.log("🔌 Koneksi tertutup, status:", statusCode);
+
+            if (statusCode === DisconnectReason.loggedOut) {
+                bot.sendMessage(chatId, "⚠️ Sesi telah keluar. Silakan ketik /start lagi untuk scan baru.");
+            } else {
+                // Hubungkan ulang otomatis jika bukan logout
                 startWA(chatId);
             }
         } 
         
-        // 3. JIKA SUDAH SCAN (OPEN) -> OTOMATIS BLAST
+        // 3. Jika Berhasil Scan -> Langsung Blast
         else if (connection === 'open') {
-            console.log("🔓 WhatsApp Terhubung!");
-            bot.sendMessage(chatId, "✅ **Terhubung!** Memulai proses Blast ke " + DAFTAR_NOMOR.length + " nomor...");
-
+            bot.sendMessage(chatId, "✅ **Tersambung!** Memulai Blast ke " + DAFTAR_NOMOR.length + " nomor...");
+            
             for (const nomor of DAFTAR_NOMOR) {
                 try {
-                    const jid = `${nomor}@s.whatsapp.net`;
-                    await sock.sendMessage(jid, { text: PESAN_BLAST });
-                    console.log(`✅ Berhasil kirim ke: ${nomor}`);
-                    
-                    // Jeda antar pesan
+                    await sock.sendMessage(`${nomor}@s.whatsapp.net`, { text: PESAN_BLAST });
+                    console.log(`✅ Sukses: ${nomor}`);
                     await new Promise(res => setTimeout(res, JEDA_DETIK * 1000));
                 } catch (err) {
-                    console.log(`❌ Gagal ke ${nomor}: ${err.message}`);
+                    console.log(`❌ Gagal ${nomor}: ${err.message}`);
                 }
             }
-            bot.sendMessage(chatId, "🏁 **Proses Blast Selesai!**");
+            bot.sendMessage(chatId, "🏁 **Selesai!** Semua pesan blast terkirim.");
         }
     });
 
     sock.ev.on('creds.update', saveCreds);
 }
 
-// Handler tombol /start
 bot.onText(/\/start/, (msg) => {
-    bot.sendMessage(msg.chat.id, "🔄 Melakukan Reset Sesi... Harap tunggu barcode muncul.");
+    bot.sendMessage(msg.chat.id, "🔍 Menyiapkan sesi WhatsApp... Mohon tunggu.");
     startWA(msg.chat.id);
 });
 
-console.log("🚀 Server Blast siap dijalankan!");
+console.log("🚀 Server siap!");
