@@ -6,16 +6,19 @@ const pino = require('pino');
 const token = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
 const bot = new TelegramBot(token, {polling: true});
 
-// --- PENGATURAN BLAST (UBAH DI SINI) ---
-const DAFTAR_NOMOR = ["6285219094574", "628987654321"]; // Tambahkan nomor tujuan di sini
-const PESAN_BLAST = "Halo! Ini adalah pesan blast otomatis setelah scan. 🚀";
-const JEDA_DETIK = 5; // Jeda antar pesan agar tidak kena Banned
-// ---------------------------------------
+// --- PENGATURAN BLAST ---
+const DAFTAR_NOMOR = ["6285219094574", "628987654321"]; // Ganti nomor di sini
+const PESAN_BLAST = "Halo! Ini adalah pesan blast otomatis. 🚀";
+const JEDA_DETIK = 7; 
+// --------------------------
 
-// Variabel Kontrol
 let isBlasting = false;
+let suksesCount = 0;
+let gagalCount = 0;
+let lastChatId = null;
 
 async function startWA(chatId) {
+    lastChatId = chatId;
     const { state, saveCreds } = await useMultiFileAuthState('session_data');
     const { version } = await fetchLatestBaileysVersion();
 
@@ -29,47 +32,58 @@ async function startWA(chatId) {
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
 
+        // 1. Kirim QR jika ada
         if (qr) {
             try {
                 const buffer = await QRCode.toBuffer(qr, { scale: 10 });
-                await bot.sendPhoto(chatId, buffer, {
-                    caption: "📸 **SCAN SEKARANG**\n_Begitu di-scan, bot akan langsung kirim Blast._",
-                    parse_mode: 'Markdown'
-                });
+                await bot.sendPhoto(chatId, buffer, { caption: "📸 **SILAKAN SCAN**\n_Rekap akan muncul otomatis jika WA terputus/terblokir._", parse_mode: 'Markdown' });
             } catch (e) { console.log("Gagal kirim QR"); }
         }
 
+        // 2. JIKA KONEKSI MATI (TERBLOKIR ATAU KELUAR)
         if (connection === 'close') {
-            const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            if (shouldReconnect) startWA(chatId);
-        } else if (connection === 'open') {
-            isBlasting = true; // Set status sedang membroadcast
-            bot.sendMessage(chatId, "🎉 **WhatsApp Terhubung!** Memulai proses Blast otomatis...\n\n_Ketik /stop jika ingin membatalkan._");
+            const reason = lastDisconnect.error?.output?.statusCode;
             
-            // --- PROSES BLAST DIMULAI ---
+            // TAMPILKAN REKAP TERAKHIR SAAT MATI
+            if (isBlasting) {
+                let pesanRekap = `⚠️ **KONEKSI TERPUTUS / WA KELUAR**\n\n` +
+                                 `✅ BERHASIL : ${suksesCount}\n` +
+                                 `❌ GAGAL : ${gagalCount}\n` +
+                                 `📊 Status Akhir sebelum terputus.`;
+                await bot.sendMessage(chatId, pesanRekap);
+                isBlasting = false;
+            }
+
+            const shouldReconnect = reason !== DisconnectReason.loggedOut;
+            if (shouldReconnect) startWA(chatId);
+        } 
+        
+        // 3. JIKA TERHUBUNG -> MULAI BLAST
+        else if (connection === 'open') {
+            isBlasting = true;
+            suksesCount = 0; // Reset hitungan saat baru mulai
+            gagalCount = 0;
+            
+            bot.sendMessage(chatId, `🚀 **WhatsApp Terhubung!**\nMemulai Blast ke ${DAFTAR_NOMOR.length} nomor...`);
+
             for (const nomor of DAFTAR_NOMOR) {
-                // CEK APAKAH USER MENEKAN STOP
-                if (!isBlasting) {
-                    bot.sendMessage(chatId, "🛑 **Blast Dihentikan Paksa.**");
-                    console.log("Blast distop oleh user.");
-                    break; // Keluar dari perulangan
-                }
+                if (!isBlasting) break;
 
                 try {
                     const jid = `${nomor}@s.whatsapp.net`;
                     await sock.sendMessage(jid, { text: PESAN_BLAST });
-                    console.log(`✅ Terkirim ke: ${nomor}`);
-                    
-                    // Jeda agar aman
-                    await new Promise(res => setTimeout(res, JEDA_DETIK * 1000));
+                    suksesCount++;
+                    console.log(`✅ Sukses: ${nomor}`);
                 } catch (err) {
-                    console.log(`❌ Gagal ke ${nomor}: ${err.message}`);
+                    gagalCount++;
+                    console.log(`❌ Gagal: ${nomor}`);
                 }
+                await new Promise(res => setTimeout(res, JEDA_DETIK * 1000));
             }
 
             if (isBlasting) {
+                bot.sendMessage(chatId, `🏁 **BLAST SELESAI**\n\n✅ BERHASIL : ${suksesCount}\n❌ GAGAL : ${gagalCount}`);
                 isBlasting = false;
-                bot.sendMessage(chatId, "🏁 **Blast Selesai!** Semua nomor telah dikirim.");
             }
         }
     });
@@ -77,20 +91,14 @@ async function startWA(chatId) {
     sock.ev.on('creds.update', saveCreds);
 }
 
-// Handler perintah /start
 bot.onText(/\/start/, (msg) => {
-    bot.sendMessage(msg.chat.id, "🔍 Sedang menyiapkan Barcode...");
+    bot.sendMessage(msg.chat.id, "🔍 Menyiapkan Sesi...");
     startWA(msg.chat.id);
 });
 
-// Handler perintah /stop
 bot.onText(/\/stop/, (msg) => {
-    if (isBlasting) {
-        isBlasting = false;
-        bot.sendMessage(msg.chat.id, "⏳ Sedang menghentikan antrean pesan... mohon tunggu.");
-    } else {
-        bot.sendMessage(msg.chat.id, "❌ Tidak ada proses blast yang sedang berjalan.");
-    }
+    isBlasting = false;
+    bot.sendMessage(msg.chat.id, "🛑 Menghentikan Blast...");
 });
 
-console.log("🚀 Server Blast Standby...");
+console.log("🚀 Bot Rekap Otomatis Siap!");
