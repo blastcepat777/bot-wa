@@ -1,31 +1,47 @@
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require("@whiskeysockets/baileys");
 const TelegramBot = require('node-telegram-bot-api');
-const axios = require('axios');
+const QRCode = require('qrcode');
+const pino = require('pino');
 
 const token = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
 const bot = new TelegramBot(token, {polling: true});
 
-// ISI DATA YUPRA ANDA (Wajib)
-const API_KEY_YUPRA = 'ISI_API_KEY_YUPRA_ANDA';
-const DEVICE_ID = 'ISI_DEVICE_ID_ANDA';
-
-bot.onText(/\/start/, async (msg) => {
-  const chatId = msg.chat.id;
-  bot.sendMessage(chatId, "⏳ Sedang mengambil barcode pairing dari Yupra...");
-
-  try {
-    // Memanggil API Yupra secara langsung (Tanpa perlu buka browser)
-    const response = await axios.get(`https://cp.yupra.me/api/v1/qr/${DEVICE_ID}?api_key=${API_KEY_YUPRA}`);
+async function startWhatsApp(chatId) {
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
     
-    // Sesuaikan 'qr_link' dengan struktur respon API Yupra Anda
-    const qrUrl = response.data.results.qr_link; 
-
-    bot.sendPhoto(chatId, qrUrl, {
-      caption: "✅ Scan barcode ini segera di WhatsApp Anda!"
+    const sock = makeWASocket({
+        auth: state,
+        printQRInTerminal: true, // Tetap muncul di console Railway
+        logger: pino({ level: 'silent' })
     });
-  } catch (error) {
-    console.error("Error API:", error.message);
-    bot.sendMessage(chatId, "❌ Gagal mengambil barcode. Pastikan API Key & Device ID sudah benar.");
-  }
+
+    sock.ev.on('connection.update', async (update) => {
+        const { connection, lastDisconnect, qr } = update;
+
+        // JIKA ADA QR CODE BARU
+        if (qr) {
+            console.log("QR Terdeteksi, mengirim ke Telegram...");
+            const qrBuffer = await QRCode.toBuffer(qr);
+            bot.sendPhoto(chatId, qrBuffer, {
+                caption: "🚀 **BARCODE PAIRING BARU**\n\nSilakan scan segera (berlaku 20 detik).\nJika kadaluarsa, ketik /start lagi.",
+                parse_mode: 'Markdown'
+            });
+        }
+
+        if (connection === 'close') {
+            const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
+            if (shouldReconnect) startWhatsApp(chatId);
+        } else if (connection === 'open') {
+            bot.sendMessage(chatId, "✅ **WhatsApp Terhubung!** Bot Anda sekarang sudah online.");
+        }
+    });
+
+    sock.ev.on('creds.update', saveCreds);
+}
+
+bot.onText(/\/start/, (msg) => {
+    startWhatsApp(msg.chat.id);
+    bot.sendMessage(msg.chat.id, "⏳ Memulai sesi WhatsApp... Barcode akan muncul di bawah jika belum tertaut.");
 });
 
-console.log("Bot berjalan tanpa Puppeteer - Jauh lebih ringan!");
+console.log("Bot Baileys-Telegram Ready!");
