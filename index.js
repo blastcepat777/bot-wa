@@ -105,7 +105,7 @@ async function startWA(chatId) {
                 updateFileNomor(daftar);
 
                 if (daftar.length > 0 && isBlasting) {
-                    await new Promise(res => setTimeout(res, JEDA_DETIK * 10000));
+                    await new Promise(res => setTimeout(res, JEDA_DETIK * 6000));
                 }
             }
 
