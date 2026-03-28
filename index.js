@@ -1,57 +1,31 @@
-const { Client, LocalAuth } = require('whatsapp-web.js');
-const qrcode = require('qrcode');
 const TelegramBot = require('node-telegram-bot-api');
+const axios = require('axios');
 
-// ambil token dari Railway
-const token = process.env.BOT_TOKEN;
+const token = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
+const bot = new TelegramBot(token, {polling: true});
 
-if (!token) {
-    console.error("BOT TOKEN TIDAK ADA!");
-    process.exit(1);
-}
-
-// aktifkan bot telegram
-const bot = new TelegramBot(token, { polling: true });
-
-// anti crash
-process.on('uncaughtException', console.error);
-process.on('unhandledRejection', console.error);
+// ISI DATA YUPRA ANDA (Wajib)
+const API_KEY_YUPRA = 'ISI_API_KEY_YUPRA_ANDA';
+const DEVICE_ID = 'ISI_DEVICE_ID_ANDA';
 
 bot.onText(/\/start/, async (msg) => {
-    const chatId = msg.chat.id;
+  const chatId = msg.chat.id;
+  bot.sendMessage(chatId, "⏳ Sedang mengambil barcode pairing dari Yupra...");
 
-    bot.sendMessage(chatId, '⏳ Menghubungkan WhatsApp...');
+  try {
+    // Memanggil API Yupra secara langsung (Tanpa perlu buka browser)
+    const response = await axios.get(`https://cp.yupra.me/api/v1/qr/${DEVICE_ID}?api_key=${API_KEY_YUPRA}`);
+    
+    // Sesuaikan 'qr_link' dengan struktur respon API Yupra Anda
+    const qrUrl = response.data.results.qr_link; 
 
-    const client = new Client({
-        authStrategy: new LocalAuth({ clientId: String(chatId) }),
-        puppeteer: {
-            headless: true,
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-gpu'
-            ]
-        }
+    bot.sendPhoto(chatId, qrUrl, {
+      caption: "✅ Scan barcode ini segera di WhatsApp Anda!"
     });
-
-    client.on('qr', async (qr) => {
-        console.log('QR TERGENERATE');
-        const qrImage = await qrcode.toBuffer(qr);
-        bot.sendPhoto(chatId, qrImage, { caption: '📲 Scan QR WhatsApp kamu' });
-    });
-
-    client.on('ready', () => {
-        bot.sendMessage(chatId, '✅ WhatsApp Connected!');
-    });
-
-    client.on('auth_failure', () => {
-        bot.sendMessage(chatId, '❌ Gagal autentikasi WhatsApp');
-    });
-
-    client.on('disconnected', () => {
-        bot.sendMessage(chatId, '⚠️ WhatsApp terputus');
-    });
-
-    client.initialize();
+  } catch (error) {
+    console.error("Error API:", error.message);
+    bot.sendMessage(chatId, "❌ Gagal mengambil barcode. Pastikan API Key & Device ID sudah benar.");
+  }
 });
+
+console.log("Bot berjalan tanpa Puppeteer - Jauh lebih ringan!");
