@@ -25,11 +25,18 @@ bot.onText(/\/start/, async (msg) => {
     const client = new Client({
         authStrategy: new LocalAuth({ clientId: String(chatId) }),
         puppeteer: {
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
+            headless: true,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu'
+            ]
         }
     });
 
     client.on('qr', async (qr) => {
+        console.log('QR TERGENERATE');
         const qrImage = await qrcode.toBuffer(qr);
         bot.sendPhoto(chatId, qrImage, { caption: '📲 Scan QR WhatsApp kamu' });
     });
