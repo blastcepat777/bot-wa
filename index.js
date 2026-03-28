@@ -2,7 +2,7 @@ const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode');
 const TelegramBot = require('node-telegram-bot-api');
 
-const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
+const bot = new TelegramBot(process.env.8657782534:AAF_1CDS_6tdqw8bIKwKEticsAdz9xxxL-w, { polling: true });
 
 bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
