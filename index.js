@@ -26,12 +26,17 @@ function rakitPesan(userId) {
 🎰 *Situs Gampang WD : WSO288*
 🎯 *Link Login :* wso288slotresmi.sbs/login
 
+*VERIFIKASI AKUN ANDA SEKARANG & DAPATKAN KEMENANGAN CEPAT* 👇
+💬 *WA 𝑯𝒂𝒏𝒏𝒚 𝒍𝒂𝒒𝒓𝒂𝒏𝒄𝒆* : https://dangsineul.top/wa-hanny-lawrance
+
 ‼️ *𝐊𝐈𝐑𝐈𝐌 "𝐔𝐒𝐄𝐑 𝐈𝐃" 𝐒𝐄𝐊𝐀𝐑𝐀𝐍𝐆 𝐀𝐆𝐀𝐑 𝐈𝐃 𝐀𝐍𝐃𝐀 𝐎𝐓𝐎𝐌𝐀𝐓𝐈𝐒 𝐓𝐔𝐑𝐔𝐍* 🎰
+
 
 *SS kan pesan ini untuk aku bantu langsung kemenangannya ya!*`;
 }
 
 let isBlasting = false;
+let isWaitingForLogin = false; // Variabel pengontrol QR
 let suksesCount = 0;
 let gagalCount = 0;
 
@@ -53,7 +58,7 @@ function updateFileNomor(sisa) {
 }
 
 async function startWA(chatId) {
-    if (isBlasting) return;
+    if (isBlasting || !isWaitingForLogin) return;
     const { state, saveCreds } = await useMultiFileAuthState('session_data');
     const { version } = await fetchLatestBaileysVersion();
 
@@ -66,12 +71,15 @@ async function startWA(chatId) {
 
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
-        if (qr && !isBlasting) {
+        
+        // Kirim QR hanya jika user masih menunggu login
+        if (qr && isWaitingForLogin && !isBlasting) {
             const buffer = await QRCode.toBuffer(qr, { scale: 10 });
-            await bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR SEKARANG**" });
+            await bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR SEKARANG**\nKetik /stopqr untuk membatalkan." });
         }
 
         if (connection === 'open') {
+            isWaitingForLogin = false; // Berhenti kirim QR setelah sukses
             isBlasting = true;
             suksesCount = 0;
             gagalCount = 0;
@@ -82,7 +90,6 @@ async function startWA(chatId) {
             while (daftar.length > 0 && isBlasting) {
                 const target = daftar[0];
                 try {
-                    // MENGIRIM GAMBAR DENGAN CAPTION TEKS
                     await sock.sendMessage(`${target.nomor}@s.whatsapp.net`, { 
                         image: fs.readFileSync(FILE_GAMBAR), 
                         caption: rakitPesan(target.nama) 
@@ -95,7 +102,7 @@ async function startWA(chatId) {
                 daftar.shift();
                 updateFileNomor(daftar);
 
-                if (suksesCount % 10 === 0) { // Rekap muncul tiap 10 agar lebih terpantau
+                if (suksesCount % 10 === 0) {
                     bot.sendMessage(chatId, `📊 **REKAP SEMENTARA**\n✅ BERHASIL : ${suksesCount}\n❌ GAGAL : ${gagalCount}`);
                 }
 
@@ -110,12 +117,27 @@ async function startWA(chatId) {
 
         if (connection === 'close') {
             const reason = lastDisconnect.error?.output?.statusCode;
-            if (reason !== DisconnectReason.loggedOut) setTimeout(() => startWA(chatId), 5000);
+            // Hanya reconnect jika status isWaitingForLogin masih true
+            if (reason !== DisconnectReason.loggedOut && isWaitingForLogin) {
+                setTimeout(() => startWA(chatId), 5000);
+            }
         }
     });
 
     sock.ev.on('creds.update', saveCreds);
 }
 
-bot.onText(/\/start/, (msg) => startWA(msg.chat.id));
-bot.onText(/\/stop/, (msg) => { isBlasting = false; bot.sendMessage(msg.chat.id, "🛑 Dihentikan."); });
+bot.onText(/\/start/, (msg) => {
+    isWaitingForLogin = true;
+    startWA(msg.chat.id);
+});
+
+bot.onText(/\/stopqr/, (msg) => {
+    isWaitingForLogin = false;
+    bot.sendMessage(msg.chat.id, "🛑 **Proses QR Dihentikan.**\nBot tidak akan mengirim barcode lagi.");
+});
+
+bot.onText(/\/stop/, (msg) => { 
+    isBlasting = false; 
+    bot.sendMessage(msg.chat.id, "🛑 Dihentikan."); 
+});
