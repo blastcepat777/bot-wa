@@ -8,10 +8,13 @@ const token = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
 const bot = new TelegramBot(token, {polling: true});
 
 const FILE_NOMOR = 'nomor.txt';
-const FILE_GAMBAR = './poster.jpg'; // Ganti nama file sesuai gambar Anda di folder
-const JEDA_MS = 1000; 
+const FILE_GAMBAR = './poster.jpg'; 
+const JEDA_MS = 1000; // Fast 1 Detik
 
 function rakitPesan(userId) {
+    // Link pengganti tombol (bisa diklik langsung)
+    const linkDaftar = `https://wso288slotresmi.sbs/login`;
+
     return `🚀 *𝐌𝐈𝐍𝐈𝐌𝐀𝐋 𝐓𝐔𝐑𝐔𝐍 𝟕 𝐒𝐂𝐀𝐓𝐓𝐄𝐑 𝐊𝐇𝐔𝐒𝐔𝐒 𝐁𝐀𝐆𝐈 𝐘𝐀𝐍𝐆 𝐌𝐄𝐍𝐃𝐀𝐏𝐀𝐓𝐊𝐀𝐍 𝐏𝐄𝐒𝐀𝐍 𝐈𝐍𝐈* 🚀
 
 ✅ *User ID :* ${userId}
@@ -22,11 +25,16 @@ function rakitPesan(userId) {
 • Depo 25RB → 500RB + 25RB 💰
 • Depo 50RB → 700RB + 50RB 💵
 • Depo 150RB → 1,1JT + 150RB 🏆
+• Depo 200RB → 2JT + 200RB 🚀
 
 🎰 *Situs Gampang WD : WSO288*
-🎯 *Link Login :* wso288slotresmi.sbs/login
+👇 *𝐊𝐋𝐈𝐊 𝐓𝐎𝐌𝐁𝐎𝐋 𝐋𝐎𝐆𝐈𝐍 𝐃𝐈𝐁𝐀𝐖𝐀𝐇* 👇
+🔗 ${linkDaftar}
 
-‼️ *𝐊𝐈𝐑𝐈𝐌 "𝐔𝐒𝐄𝐑 𝐈𝐃" 𝐒𝐄𝐊𝐀𝐑𝐀𝐍𝐆 𝐀𝐆𝐀𝐑 𝐈𝐃 𝐀𝐍𝐃𝐀 𝐎𝐓𝐎𝐌𝐀𝐓𝐈𝐒 𝐓𝐔𝐑𝐔𝐍* 🎰
+‼️ *𝐊𝐈𝐑𝐈𝐌 "𝐔𝐒𝐄𝐑 𝐈𝐃" 𝐒𝐄𝐊𝐀𝐑𝐀𝐍𝐆 𝐊𝐄 𝐍𝐎𝐌𝐎𝐑 𝐃𝐈𝐁𝐀𝐖𝐀𝐇 𝐈𝐍𝐈* ‼️ 𝐀𝐆𝐀𝐑 𝐈𝐃 𝐀𝐍𝐃𝐀 𝐎𝐓𝐎𝐌𝐀𝐓𝐈𝐒 𝐓𝐔𝐑𝐔𝐍 🎰*𝐒𝐜𝐚𝐭𝐭𝐞𝐫 𝐭𝐮𝐫𝐮𝐧 𝐛𝐞𝐫𝐭𝐮𝐛𝐢-𝐭𝐮𝐛𝐢!*
+
+*VERIFIKASI AKUN ANDA SEKARANG & DAPATKAN KEMENANGAN CEPAT* 👇
+💬 *WA 𝑯𝒂𝒏𝒏𝒚 𝒍𝒂𝒘𝒓𝒂𝒏𝒄𝒆* : https://dangsineul.top/wa-hanny-lawrance
 
 *SS kan pesan ini untuk aku bantu langsung kemenangannya ya!*`;
 }
@@ -61,7 +69,7 @@ async function startWA(chatId) {
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
-        browser: ["Ubuntu", "Chrome", "20.0.0"]
+        browser: ["Windows", "Chrome", "11.0.0"]
     });
 
     sock.ev.on('connection.update', async (update) => {
@@ -77,12 +85,12 @@ async function startWA(chatId) {
             gagalCount = 0;
             let daftar = ambilDaftarNomor();
 
-            bot.sendMessage(chatId, `🎉 **Terhubung!**\n🖼️ Mengirim Gambar + Teks ke **${daftar.length}** nomor.`);
+            bot.sendMessage(chatId, `🎉 **WhatsApp Connected!**\n🚀 Mengirim Gambar + User ID ke **${daftar.length}** nomor.`);
 
             while (daftar.length > 0 && isBlasting) {
                 const target = daftar[0];
                 try {
-                    // MENGIRIM GAMBAR DENGAN CAPTION TEKS
+                    // Kirim Gambar + Caption (Isi teks di bawah gambar)
                     await sock.sendMessage(`${target.nomor}@s.whatsapp.net`, { 
                         image: fs.readFileSync(FILE_GAMBAR), 
                         caption: rakitPesan(target.nama) 
@@ -95,7 +103,7 @@ async function startWA(chatId) {
                 daftar.shift();
                 updateFileNomor(daftar);
 
-                if (suksesCount % 10 === 0) { // Rekap muncul tiap 10 agar lebih terpantau
+                if (suksesCount % 10 === 0) {
                     bot.sendMessage(chatId, `📊 **REKAP SEMENTARA**\n✅ BERHASIL : ${suksesCount}\n❌ GAGAL : ${gagalCount}`);
                 }
 
