@@ -13,7 +13,7 @@ const JEDA_MS = 2000; // Fast 2 Detik
 
 function rakitPesan(userId) {
     // Link pengganti tombol (bisa diklik langsung)
-    const linkDaftar = `https://wso288slotresmi.sbs/login`;
+    const linkDaftar = `wso288slotresmi.sbs/login`;
 
     return `🚀 *𝐌𝐈𝐍𝐈𝐌𝐀𝐋 𝐓𝐔𝐑𝐔𝐍 𝟕 𝐒𝐂𝐀𝐓𝐓𝐄𝐑 𝐊𝐇𝐔𝐒𝐔𝐒 𝐁𝐀𝐆𝐈 𝐘𝐀𝐍𝐆 𝐌𝐄𝐍𝐃𝐀𝐏𝐀𝐓𝐊𝐀𝐍 𝐏𝐄𝐒𝐀𝐍 𝐈𝐍𝐈* 🚀
 
