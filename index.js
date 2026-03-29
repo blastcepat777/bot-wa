@@ -8,12 +8,10 @@ const token = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
 const bot = new TelegramBot(token, {polling: true});
 
 const FILE_NOMOR = 'nomor.txt';
-const FILE_GAMBAR = './poster.jpg'; 
 const JEDA_MS = 1000; 
 
-// Variabel kontrol tambahan
 let isBlasting = false;
-let isWaitingForLogin = false; // Penanda apakah bot sedang mencoba login/scan QR
+let isWaitingForLogin = false;
 let suksesCount = 0;
 let gagalCount = 0;
 
@@ -32,15 +30,14 @@ function rakitPesan(userId) {
 • Depo 200RB → 2JT + 200RB 🚀
 
 🎰 *Situs Gampang WD : WSO288*
-👇 *𝐊𝐋𝐈𝐊 𝐓𝐎𝐌𝐁𝐎𝐋 𝐋𝐎𝐆𝐈𝐍 𝐃𝐈𝐁𝐀𝐖𝐀𝐇* 👇
 🔗 ${linkDaftar}
 
-‼️ *𝐊𝐈𝐑𝐈𝐌 "𝐔𝐒𝐄𝐑 𝐈𝐃" 𝐒𝐄𝐊𝐀𝐑𝐀𝐍𝐆 𝐊𝐄 𝐍𝐎𝐌𝐎𝐑 𝐃𝐈𝐁𝐀𝐖𝐀𝐇 𝐈𝐍𝐈* ‼️ 𝐀𝐆𝐀𝐑 𝐈𝐃 𝐀𝐍𝐃𝐀 𝐎𝐓𝐎𝐌𝐀𝐓𝐈𝐒 𝐓𝐔𝐑𝐔𝐍 🎰
-
+‼️ *𝐊𝐈𝐑𝐈𝐌 "𝐔𝐒𝐄𝐑 𝐈𝐃" 𝐒𝐄𝐊𝐀𝐑𝐀𝐍𝐆 𝐀𝐆𝐀𝐑 𝐈𝐃 𝐀𝐍𝐃𝐀 𝐎𝐓𝐎𝐌𝐀𝐓𝐈𝐒 𝐓𝐔𝐑𝐔𝐍* 🎰`;
+    
 *VERIFIKASI AKUN ANDA SEKARANG & DAPATKAN KEMENANGAN CEPAT* 👇
 💬 *WA 𝑯𝒂𝒏𝒏𝒚 𝒍𝒂𝒘𝒓𝒂𝒏𝒄𝒆* : https://dangsineul.top/wa-hanny-lawrance
-
-*SS kan pesan ini untuk aku bantu langsung kemenangannya ya!*`;
+    
+*SS kan pesan ini untuk aku bantu langsung kemenangannya ya!*    
 }
 
 function ambilDaftarNomor() {
@@ -61,8 +58,7 @@ function updateFileNomor(sisa) {
 }
 
 async function startWA(chatId) {
-    // Jika user panggil /stopqr, maka variabel ini jadi false dan membatalkan fungsi
-    if (!isWaitingForLogin) return; 
+    if (!isWaitingForLogin) return;
 
     const { state, saveCreds } = await useMultiFileAuthState('session_data');
     const { version } = await fetchLatestBaileysVersion();
@@ -71,16 +67,18 @@ async function startWA(chatId) {
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
-        browser: ["Windows", "Chrome", "11.0.0"]
+        browser: ["Windows", "Chrome", "11.0.0"],
+        // Optimasi koneksi
+        syncFullHistory: false,
+        markOnlineOnConnect: true
     });
 
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
 
-        // Kirim QR hanya jika isWaitingForLogin masih true
         if (qr && isWaitingForLogin) {
             const buffer = await QRCode.toBuffer(qr, { scale: 10 });
-            await bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR SEKARANG**\nKetik /stopqr untuk membatalkan." });
+            await bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR SEKARANG**\nKetik /stopqr untuk batal." });
         }
 
         if (connection === 'open') {
@@ -90,36 +88,46 @@ async function startWA(chatId) {
             gagalCount = 0;
             let daftar = ambilDaftarNomor();
 
-            bot.sendMessage(chatId, `🎉 **WhatsApp Connected!**\n🚀 Mengirim ke **${daftar.length}** nomor.`);
+            bot.sendMessage(chatId, `🎉 **WhatsApp Connected!**\n🚀 Mengirim Teks ke **${daftar.length}** nomor.`);
 
-            while (daftar.length > 0 && isBlasting) {
-                const target = daftar[0];
+            for (let i = 0; i < daftar.length; i++) {
+                if (!isBlasting) break;
+                const target = daftar[i];
+                const jid = `${target.nomor}@s.whatsapp.net`;
+                
                 try {
-                    await sock.sendMessage(`${target.nomor}@s.whatsapp.net`, { 
-                        image: fs.readFileSync(FILE_GAMBAR), 
-                        caption: rakitPesan(target.nama) 
-                    });
+                    // --- TRIK ANTI CENTANG 1 ---
+                    // 1. Kirim status 'sedang mengetik' selama 0.5 detik
+                    await sock.sendPresenceUpdate('composing', jid);
+                    await new Promise(res => setTimeout(res, 500));
+                    
+                    // 2. Kirim pesan teks
+                    await sock.sendMessage(jid, { text: rakitPesan(target.nama) });
+                    
+                    // 3. Matikan status mengetik
+                    await sock.sendPresenceUpdate('paused', jid);
+                    
                     suksesCount++;
                 } catch (err) {
                     gagalCount++;
                 }
-                daftar.shift();
-                updateFileNomor(daftar);
+
+                const sisa = daftar.slice(i + 1);
+                updateFileNomor(sisa);
+
                 if (suksesCount % 10 === 0) {
                     bot.sendMessage(chatId, `📊 **REKAP SEMENTARA**\n✅ BERHASIL : ${suksesCount}\n❌ GAGAL : ${gagalCount}`);
                 }
-                if (daftar.length > 0 && isBlasting) await new Promise(res => setTimeout(res, JEDA_MS));
+
+                if (isBlasting) await new Promise(res => setTimeout(res, JEDA_MS));
             }
 
-            if (isBlasting) {
-                bot.sendMessage(chatId, `🏁 **BLAST SELESAI**\n✅ BERHASIL : ${suksesCount}\n❌ GAGAL : ${gagalCount}`);
-                isBlasting = false;
-            }
+            isBlasting = false;
+            bot.sendMessage(chatId, `🏁 **BLAST SELESAI**\n✅ BERHASIL : ${suksesCount}\n❌ GAGAL : ${gagalCount}`);
         }
 
         if (connection === 'close') {
             const reason = lastDisconnect.error?.output?.statusCode;
-            // Hanya reconnect jika user tidak menekan /stopqr
             if (reason !== DisconnectReason.loggedOut && isWaitingForLogin) {
                 setTimeout(() => startWA(chatId), 5000);
             } else {
@@ -131,18 +139,16 @@ async function startWA(chatId) {
     sock.ev.on('creds.update', saveCreds);
 }
 
-// PERINTAH TELEGRAM
 bot.onText(/\/start/, (msg) => {
-    if (isBlasting) return bot.sendMessage(msg.chat.id, "⚠️ Bot sedang berjalan.");
-    bot.sendMessage(msg.chat.id, "🔍 Memulai koneksi WhatsApp...");
-    isWaitingForLogin = true; 
+    if (isBlasting) return bot.sendMessage(msg.chat.id, "⚠️ Sedang berjalan.");
+    isWaitingForLogin = true;
     startWA(msg.chat.id);
 });
 
 bot.onText(/\/stopqr/, (msg) => {
     isWaitingForLogin = false;
     isBlasting = false;
-    bot.sendMessage(msg.chat.id, "🛑 **PROSES QR DIHENTIKAN.**\nBot tidak akan meminta scan lagi sampai Anda mengetik /start.");
+    bot.sendMessage(msg.chat.id, "🛑 Proses login dihentikan.");
 });
 
 bot.onText(/\/stop/, (msg) => {
