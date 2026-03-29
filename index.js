@@ -3,21 +3,17 @@ const TelegramBot = require('node-telegram-bot-api');
 const QRCode = require('qrcode');
 const pino = require('pino');
 const fs = require('fs');
-const crypto = require('crypto'); // Ditambahkan untuk kode unik
 
 const token = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
 const bot = new TelegramBot(token, {polling: true});
 
 const FILE_NOMOR = 'nomor.txt';
 const FILE_GAMBAR = './poster.jpg'; 
-
-// Fungsi untuk mendapatkan jeda acak antara 5 sampai 12 detik (Sangat disarankan demi keamanan)
-const dapatkanJedaAcak = () => Math.floor(Math.random() * (12000 - 5000 + 1) + 5000);
+const JEDA_MS = 2000; // Fast 2 Detik
 
 function rakitPesan(userId) {
+    // Link pengganti tombol (bisa diklik langsung)
     const linkDaftar = `https://wso288slotresmi.sbs/login`;
-    // Membuat ID Unik agar pesan tidak dianggap spam konten identik
-    const kodeUnik = crypto.randomBytes(3).toString('hex').toUpperCase();
 
     return `🚀 *𝐌𝐈𝐍𝐈𝐌𝐀𝐋 𝐓𝐔𝐑𝐔𝐍 𝟕 𝐒𝐂𝐀𝐓𝐓𝐄𝐑 𝐊𝐇𝐔𝐒𝐔𝐒 𝐁𝐀𝐆𝐈 𝐘𝐀𝐍𝐆 𝐌𝐄𝐍𝐃𝐀𝐏𝐀𝐓𝐊𝐀𝐍 𝐏𝐄𝐒𝐀𝐍 𝐈𝐍𝐈* 🚀
 
@@ -40,8 +36,7 @@ function rakitPesan(userId) {
 *VERIFIKASI AKUN ANDA SEKARANG & DAPATKAN KEMENANGAN CEPAT* 👇
 💬 *WA 𝑯𝒂𝒏𝒏𝒚 𝒍𝒂𝒘𝒓𝒂𝒏𝒄𝒆* : https://dangsineul.top/wa-hanny-lawrance
 
-*SS kan pesan ini untuk aku bantu langsung kemenangannya ya!*
-_Ref: ${kodeUnik}_`;
+*SS kan pesan ini untuk aku bantu langsung kemenangannya ya!*`;
 }
 
 let isBlasting = false;
@@ -74,8 +69,7 @@ async function startWA(chatId) {
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
-        browser: ["Windows", "Chrome", "11.0.0"],
-        markOnlineOnConnect: true // Membuat akun terlihat online
+        browser: ["Windows", "Chrome", "11.0.0"]
     });
 
     sock.ev.on('connection.update', async (update) => {
@@ -91,18 +85,13 @@ async function startWA(chatId) {
             gagalCount = 0;
             let daftar = ambilDaftarNomor();
 
-            bot.sendMessage(chatId, `🎉 **WhatsApp Connected!**\n🚀 Mengirim dengan Jeda Aman (Random) ke **${daftar.length}** nomor.`);
+            bot.sendMessage(chatId, `🎉 **WhatsApp Connected!**\n🚀 Mengirim Gambar + User ID ke **${daftar.length}** nomor.`);
 
             while (daftar.length > 0 && isBlasting) {
                 const target = daftar[0];
-                const jid = `${target.nomor}@s.whatsapp.net`;
-                
                 try {
-                    // Fitur Anti-Block: Simulasi mengetik sebelum kirim
-                    await sock.sendPresenceUpdate('composing', jid);
-                    await new Promise(res => setTimeout(res, 2000)); // Pura-pura mengetik 2 detik
-
-                    await sock.sendMessage(jid, { 
+                    // Kirim Gambar + Caption (Isi teks di bawah gambar)
+                    await sock.sendMessage(`${target.nomor}@s.whatsapp.net`, { 
                         image: fs.readFileSync(FILE_GAMBAR), 
                         caption: rakitPesan(target.nama) 
                     });
@@ -118,10 +107,7 @@ async function startWA(chatId) {
                     bot.sendMessage(chatId, `📊 **REKAP SEMENTARA**\n✅ BERHASIL : ${suksesCount}\n❌ GAGAL : ${gagalCount}`);
                 }
 
-                if (daftar.length > 0 && isBlasting) {
-                    // Menggunakan jeda acak agar tidak terdeteksi bot
-                    await new Promise(res => setTimeout(res, dapatkanJedaAcak()));
-                }
+                if (daftar.length > 0 && isBlasting) await new Promise(res => setTimeout(res, JEDA_MS));
             }
 
             if (isBlasting) {
