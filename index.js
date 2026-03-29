@@ -9,7 +9,12 @@ const bot = new TelegramBot(token, {polling: true});
 
 const FILE_NOMOR = 'nomor.txt';
 const FILE_GAMBAR = './poster.jpg'; 
-const JEDA_MS = 1000; 
+
+// KONFIGURASI ANTI-BLOCK (Optimasi Cepat tapi Aman)
+const JEDA_MIN = 1000; // Minimal 1 detik
+const JEDA_MAX = 3000; // Maksimal 3 detik (Acak agar tidak terbaca pola bot)
+const BATCH_SIZE = 50; // Istirahat setiap 50 nomor
+const SLEEP_TIME = 10000; // Istirahat 10 detik (Cool-down)
 
 // Variabel kontrol tambahan
 let isBlasting = false;
