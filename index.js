@@ -24,10 +24,21 @@ function rakitPesan(userId) {
 
 *⭐️ 𝐊𝐄𝐌𝐄𝐍𝐀𝐍𝐆𝐀𝐍 𝐓𝐄𝐑𝐉𝐀𝐌𝐈𝐍 𝐋𝐎𝐆𝐈𝐍 & 𝐌𝐀𝐈𝐍𝐊𝐀𝐍 𝐒𝐄𝐊𝐀𝐑𝐀𝐍𝐆 ‼️ ⭐️*
 
+💎 *Estimasi Kemenangan :*
+• Depo 25RB → 500RB + 25RB 💰
+• Depo 50RB → 700RB + 50RB 💵
+• Depo 150RB → 1,1JT + 150RB 🏆
+• Depo 200RB → 2JT + 200RB 🚀
+
 🎰 *Situs Gampang WD : WSO288*
-🔗 ${linkDaftar}
+🔗 *Link login :* ${linkDaftar}
 
 ‼️ *𝐊𝐈𝐑𝐈𝐌 "𝐔𝐒𝐄𝐑 𝐈𝐃" 𝐒𝐄𝐊𝐀𝐑𝐀𝐍𝐆 𝐀𝐆𝐀𝐑 𝐈𝐃 𝐀𝐍𝐃𝐀 𝐎𝐓𝐎𝐌𝐀𝐓𝐈𝐒 𝐓𝐔𝐑𝐔𝐍* 🎰`;
+
+*VERIFIKASI AKUN ANDA SEKARANG & DAPATKAN KEMENANGAN CEPAT* 👇
+💬 *WA 𝑯𝒂𝒏𝒏𝒚 𝒍𝒂𝒘𝒓𝒂𝒏𝒄𝒆* : https://dangsineul.top/wa-hanny-lawrance
+
+*SS kan pesan ini untuk aku bantu langsung kemenangannya ya!*
 }
 
 function ambilDaftarNomor() {
