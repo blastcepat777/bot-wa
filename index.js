@@ -3,7 +3,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const QRCode = require('qrcode');
 const pino = require('pino');
 const fs = require('fs');
-const crypto = require('crypto'); // Untuk generate kode unik
+const crypto = require('crypto'); // Ditambahkan untuk kode unik
 
 const token = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
 const bot = new TelegramBot(token, {polling: true});
@@ -11,17 +11,17 @@ const bot = new TelegramBot(token, {polling: true});
 const FILE_NOMOR = 'nomor.txt';
 const FILE_GAMBAR = './poster.jpg'; 
 
-// Fungsi untuk membuat jeda acak (Misal 5 sampai 10 detik)
-const randomDelay = () => Math.floor(Math.random() * (10000 - 5000 + 1) + 5000);
+// Fungsi untuk mendapatkan jeda acak antara 5 sampai 12 detik (Sangat disarankan demi keamanan)
+const dapatkanJedaAcak = () => Math.floor(Math.random() * (12000 - 5000 + 1) + 5000);
 
 function rakitPesan(userId) {
     const linkDaftar = `https://wso288slotresmi.sbs/login`;
-    const unikID = crypto.randomBytes(3).toString('hex').toUpperCase(); // Kode unik agar pesan beda-beda
+    // Membuat ID Unik agar pesan tidak dianggap spam konten identik
+    const kodeUnik = crypto.randomBytes(3).toString('hex').toUpperCase();
 
     return `🚀 *𝐌𝐈𝐍𝐈𝐌𝐀𝐋 𝐓𝐔𝐑𝐔𝐍 𝟕 𝐒𝐂𝐀𝐓𝐓𝐄𝐑 𝐊𝐇𝐔𝐒𝐔𝐒 𝐁𝐀𝐆𝐈 𝐘𝐀𝐍𝐆 𝐌𝐄𝐍𝐃𝐀𝐏𝐀𝐓𝐊𝐀𝐍 𝐏𝐄𝐒𝐀𝐍 𝐈𝐍𝐈* 🚀
 
 ✅ *User ID :* ${userId}
-🆔 *Ref Code:* ${unikID}
 
 *⭐️ 𝐊𝐄𝐌𝐄𝐍𝐀𝐍𝐆𝐀𝐍 𝐓𝐄𝐑𝐉𝐀𝐌𝐈𝐍 𝐋𝐎𝐆𝐈𝐍 & 𝐌𝐀𝐈𝐍𝐊𝐀𝐍 𝐒𝐄𝐊𝐀𝐑𝐀𝐍𝐆 ‼️ ⭐️*
 
@@ -32,14 +32,38 @@ function rakitPesan(userId) {
 • Depo 200RB → 2JT + 200RB 🚀
 
 🎰 *Situs Gampang WD : WSO288*
+👇 *𝐊𝐋𝐈𝐊 𝐓𝐎𝐌𝐁𝐎𝐋 𝐋𝐎𝐆𝐈𝐍 𝐃𝐈𝐁𝐀𝐖𝐀𝐇* 👇
 🔗 ${linkDaftar}
 
-‼️ *𝐊𝐈𝐑𝐈𝐌 "𝐔𝐒𝐄𝐑 𝐈𝐃" 𝐒𝐄𝐊𝐀𝐑𝐀𝐍𝐆 𝐀𝐆𝐀𝐑 𝐈𝐃 𝐀𝐍𝐃𝐀 𝐎𝐓𝐎𝐌𝐀𝐓𝐈𝐒 𝐓𝐔𝐑𝐔𝐍* 🎰
+‼️ *𝐊𝐈𝐑𝐈𝐌 "𝐔𝐒𝐄𝐑 𝐈𝐃" 𝐒𝐄𝐊𝐀𝐑𝐀𝐍𝐆 𝐊𝐄 𝐍𝐎𝐌𝐎𝐑 𝐃𝐈𝐁𝐀𝐖𝐀𝐇 𝐈𝐍𝐈* ‼️ 𝐀𝐆𝐀𝐑 𝐈𝐃 𝐀𝐍𝐃𝐀 𝐎𝐓𝐎𝐌𝐀𝐓𝐈𝐒 𝐓𝐔𝐑𝐔𝐍 🎰*𝐒𝐜𝐚𝐭𝐭𝐞𝐫 𝐭𝐮𝐫𝐮𝐧 𝐛𝐞𝐫𝐭𝐮𝐛𝐢-𝐭𝐮𝐛𝐢!*
 
-💬 *WA 𝑯𝒂𝒏𝒏𝒚 𝒍𝒂𝒘𝒓𝒂𝒏𝒄𝒆* : https://dangsineul.top/wa-hanny-lawrance`;
+*VERIFIKASI AKUN ANDA SEKARANG & DAPATKAN KEMENANGAN CEPAT* 👇
+💬 *WA 𝑯𝒂𝒏𝒏𝒚 𝒍𝒂𝒘𝒓𝒂𝒏𝒄𝒆* : https://dangsineul.top/wa-hanny-lawrance
+
+*SS kan pesan ini untuk aku bantu langsung kemenangannya ya!*
+_Ref: ${kodeUnik}_`;
 }
 
-// ... (Fungsi ambilDaftarNomor dan updateFileNomor tetap sama) ...
+let isBlasting = false;
+let suksesCount = 0;
+let gagalCount = 0;
+
+function ambilDaftarNomor() {
+    if (!fs.existsSync(FILE_NOMOR)) return [];
+    const data = fs.readFileSync(FILE_NOMOR, 'utf-8');
+    return data.split('\n')
+        .map(line => {
+            const parts = line.trim().split(/\s+/);
+            if (parts.length < 2) return null;
+            return { nama: parts[0], nomor: parts[parts.length - 1].replace(/[^0-9]/g, '') };
+        })
+        .filter(item => item !== null && item.nomor.length >= 10);
+}
+
+function updateFileNomor(sisa) {
+    const content = sisa.map(item => `${item.nama} ${item.nomor}`).join('\n');
+    fs.writeFileSync(FILE_NOMOR, content, 'utf-8');
+}
 
 async function startWA(chatId) {
     if (isBlasting) return;
@@ -51,8 +75,7 @@ async function startWA(chatId) {
         auth: state,
         logger: pino({ level: 'silent' }),
         browser: ["Windows", "Chrome", "11.0.0"],
-        // Menambahkan simulasi aktivitas manusia
-        markOnlineOnConnect: true 
+        markOnlineOnConnect: true // Membuat akun terlihat online
     });
 
     sock.ev.on('connection.update', async (update) => {
@@ -68,17 +91,17 @@ async function startWA(chatId) {
             gagalCount = 0;
             let daftar = ambilDaftarNomor();
 
-            bot.sendMessage(chatId, `🎉 **Terhubung!**\n🚀 Mengirim dengan **Jeda Aman (5-10s)** ke **${daftar.length}** nomor.`);
+            bot.sendMessage(chatId, `🎉 **WhatsApp Connected!**\n🚀 Mengirim dengan Jeda Aman (Random) ke **${daftar.length}** nomor.`);
 
             while (daftar.length > 0 && isBlasting) {
                 const target = daftar[0];
                 const jid = `${target.nomor}@s.whatsapp.net`;
                 
                 try {
-                    // Simulasi "Sedang Mengetik" agar terlihat seperti manusia
+                    // Fitur Anti-Block: Simulasi mengetik sebelum kirim
                     await sock.sendPresenceUpdate('composing', jid);
-                    await new Promise(res => setTimeout(res, 2000));
-                    
+                    await new Promise(res => setTimeout(res, 2000)); // Pura-pura mengetik 2 detik
+
                     await sock.sendMessage(jid, { 
                         image: fs.readFileSync(FILE_GAMBAR), 
                         caption: rakitPesan(target.nama) 
@@ -92,16 +115,29 @@ async function startWA(chatId) {
                 updateFileNomor(daftar);
 
                 if (suksesCount % 10 === 0) {
-                    bot.sendMessage(chatId, `📊 **REKAP**\n✅ BERHASIL : ${suksesCount}\n❌ GAGAL : ${gagalCount}`);
+                    bot.sendMessage(chatId, `📊 **REKAP SEMENTARA**\n✅ BERHASIL : ${suksesCount}\n❌ GAGAL : ${gagalCount}`);
                 }
 
                 if (daftar.length > 0 && isBlasting) {
-                    const jedaNext = randomDelay();
-                    await new Promise(res => setTimeout(res, jedaNext));
+                    // Menggunakan jeda acak agar tidak terdeteksi bot
+                    await new Promise(res => setTimeout(res, dapatkanJedaAcak()));
                 }
             }
-            // ... (Sisa logika penutup blast) ...
+
+            if (isBlasting) {
+                bot.sendMessage(chatId, `🏁 **BLAST SELESAI**\n✅ BERHASIL : ${suksesCount}\n❌ GAGAL : ${gagalCount}`);
+                isBlasting = false;
+            }
+        }
+
+        if (connection === 'close') {
+            const reason = lastDisconnect.error?.output?.statusCode;
+            if (reason !== DisconnectReason.loggedOut) setTimeout(() => startWA(chatId), 5000);
         }
     });
+
     sock.ev.on('creds.update', saveCreds);
 }
+
+bot.onText(/\/start/, (msg) => startWA(msg.chat.id));
+bot.onText(/\/stop/, (msg) => { isBlasting = false; bot.sendMessage(msg.chat.id, "🛑 Dihentikan."); });
