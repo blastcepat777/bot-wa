@@ -9,11 +9,11 @@ const bot = new TelegramBot(token, {polling: true});
 
 const FILE_NOMOR = 'nomor.txt';
 const FILE_GAMBAR = './poster.jpg'; 
-const JEDA_MS = 2500; // Jeda 2.5 detik (Paling aman untuk BM)
+const JEDA_MS = 3000; // Dinaikkan sedikit ke 3 detik agar sinkronisasi Meta Business tidak bentrok
 
 function rakitPesan(userId) {
     const linkDaftar = `wso288slotresmi.sbs/login`;
-    const kodeUnik = Math.random().toString(36).substring(7).toUpperCase(); // Menghindari deteksi konten spam identik
+    const kodeUnik = Math.random().toString(36).substring(7).toUpperCase();
 
     return `🚀 *𝐌𝐈𝐍𝐈𝐌𝐀𝐋 𝐓𝐔𝐑𝐔𝐍 𝟕 𝐒𝐂𝐀𝐓𝐓𝐄𝐑 𝐊𝐇𝐔𝐒𝐔𝐒 𝐁𝐀𝐆𝐈 𝐘𝐀𝐍𝐆 𝐌𝐄𝐍𝐃𝐀𝐏𝐀𝐓𝐊𝐀𝐍 𝐏𝐄𝐒𝐀𝐍 𝐈𝐍𝐈* 🚀
 
@@ -64,13 +64,15 @@ async function startWA(chatId) {
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
-        // PERBAIKAN 1: Identitas Browser (Gunakan Safari/Mac agar Trust Level lebih tinggi)
+        // OPTIMASI BM: Gunakan identitas Safari Mac agar dianggap perangkat premium/aman
         browser: ["Mac OS", "Safari", "15.0"],
-        // PERBAIKAN 2: Matikan Sync History agar koneksi ringan & cepat Centang 2
-        syncFullHistory: false,
+        // PENTING: Matikan sinkronisasi agar tidak Centang 1 karena download chat lama
+        syncFullHistory: false, 
+        shouldSyncHistoryMessage: () => false, 
         markOnlineOnConnect: true,
         connectTimeoutMs: 60000,
-        defaultQueryTimeoutMs: 0,
+        // Tambahkan retry agar jika gagal kirim karena delay Meta, dia coba lagi
+        retryRequestDelayMs: 2000,
     });
 
     sock.ev.on('connection.update', async (update) => {
@@ -93,19 +95,20 @@ async function startWA(chatId) {
                 const jid = `${target.nomor}@s.whatsapp.net`;
                 
                 try {
-                    // PERBAIKAN 3: Pancing Enkripsi dengan simulasi mengetik
+                    // STEP 1: Simulasi Mengetik lebih lama (Sangat penting untuk nomor luar/BM)
                     await sock.sendPresenceUpdate('composing', jid);
-                    await new Promise(res => setTimeout(res, 1500)); // Simulasi mengetik 1.5 detik
+                    await new Promise(res => setTimeout(res, 2000)); 
 
-                    // Kirim Gambar + Caption
+                    // STEP 2: Kirim Pesan (Gambar + Caption)
                     await sock.sendMessage(jid, { 
                         image: fs.readFileSync(FILE_GAMBAR), 
                         caption: rakitPesan(target.nama) 
-                    });
+                    }, { quoted: null }); // Menghilangkan metadata tambahan agar ringan
 
                     suksesCount++;
                 } catch (err) {
                     gagalCount++;
+                    console.log("Error kirim:", err);
                 }
 
                 daftar.shift();
@@ -115,8 +118,8 @@ async function startWA(chatId) {
                     bot.sendMessage(chatId, `📊 **REKAP SEMENTARA**\n✅ BERHASIL : ${suksesCount}\n❌ GAGAL : ${gagalCount}`);
                 }
 
-                // PERBAIKAN 4: Jeda acak agar tidak terbaca bot murni
-                const jedaAcak = JEDA_MS + Math.floor(Math.random() * 2000);
+                // STEP 3: Jeda Acak (Random) - Jangan statis 2.5 detik terus
+                const jedaAcak = JEDA_MS + Math.floor(Math.random() * 3000);
                 if (daftar.length > 0 && isBlasting) await new Promise(res => setTimeout(res, jedaAcak));
             }
 
