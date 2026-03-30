@@ -1,4 +1,4 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require("@whiskeysockets/baileys");
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, delay } = require("@whiskeysockets/baileys");
 const TelegramBot = require('node-telegram-bot-api');
 const QRCode = require('qrcode');
 const pino = require('pino');
@@ -9,7 +9,11 @@ const bot = new TelegramBot(token, {polling: true});
 
 const FILE_NOMOR = 'nomor.txt';
 const FILE_GAMBAR = './poster.jpg'; 
-const JEDA_MS = 1000; // Dinaikkan sedikit ke 1 detik agar sinkronisasi Meta Business tidak bentrok
+
+// --- PENGATURAN PERKUAT WA ---
+const JEDA_BASE = 3000;   // Jeda dasar 3 detik
+const BATCH_SIZE = 25;    // Istirahat setiap 25 pesan
+const COOL_DOWN = 60000;  // Istirahat 1 menit (agar IP tidak panas)
 
 function rakitPesan(userId) {
     const linkDaftar = `wso288slotresmi.sbs/login`;
@@ -30,13 +34,7 @@ function rakitPesan(userId) {
 👇 *𝐊𝐋𝐈𝐊 𝐓𝐎𝐌𝐁𝐎𝐋 𝐋𝐎𝐆𝐈𝐍 𝐃𝐈𝐁𝐀𝐖𝐀𝐇* 👇
 🔗 ${linkDaftar}
 
-‼️ *𝐊𝐈𝐑𝐈𝐌 "𝐔𝐒𝐄𝐑 𝐈𝐃" 𝐒𝐄𝐊𝐀𝐑𝐀𝐍𝐆 𝐊𝐄 𝐍𝐎𝐌𝐎𝐑 𝐃𝐈𝐁𝐀𝐖𝐀𝐇 𝐈𝐍𝐈* ‼️ 𝐀𝐆𝐀𝐑 𝐈𝐃 𝐀𝐍𝐃𝐀 𝐎𝐓𝐎𝐌𝐀𝐓𝐈𝐒 𝐓𝐔𝐑𝐔𝐍 🎰*𝐒𝐜𝐚𝐭𝐭𝐞𝐫 𝐭𝐮𝐫𝐮𝐧 𝐛𝐞𝐫𝐭𝐮𝐛𝐢-𝐭𝐮𝐛𝐢!*
-
-*VERIFIKASI AKUN ANDA SEKARANG & DAPATKAN KEMENANGAN CEPAT* 👇
-💬 *WA 𝑯𝒂𝒏𝒏𝒚 𝒍𝒂𝒘𝒓𝒂𝒏𝒄𝒆* : https://dangsineul.top/wa-hanny-lawrance
-
-*SS kan pesan ini untuk aku bantu langsung kemenangannya ya!*
-
+‼️ *𝐊𝐈𝐑𝐈𝐌 "𝐔𝐒𝐄𝐑 𝐈𝐃" 𝐒𝐄𝐊𝐀𝐑𝐀𝐍𝐆* 🎰
 _Ref: ${kodeUnik}_`;
 }
 
@@ -70,15 +68,20 @@ async function startWA(chatId) {
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
-        // OPTIMASI BM: Gunakan identitas Safari Mac agar dianggap perangkat premium/aman
         browser: ["Mac OS", "Safari", "15.0"],
-        // PENTING: Matikan sinkronisasi agar tidak Centang 1 karena download chat lama
         syncFullHistory: false, 
         shouldSyncHistoryMessage: () => false, 
-        markOnlineOnConnect: true,
+        markOnlineOnConnect: true, // Biar akun terlihat aktif terus
         connectTimeoutMs: 60000,
-        // Tambahkan retry agar jika gagal kirim karena delay Meta, dia coba lagi
-        retryRequestDelayMs: 2000,
+    });
+
+    // FITUR PERKUAT 1: Auto-Read (Tandai pesan masuk sebagai terbaca)
+    // Ini penting agar akun tidak dianggap bot pengirim searah
+    sock.ev.on('messages.upsert', async ({ messages }) => {
+        const m = messages[0];
+        if (!m.key.fromMe) {
+            await sock.readMessages([m.key]);
+        }
     });
 
     sock.ev.on('connection.update', async (update) => {
@@ -94,43 +97,45 @@ async function startWA(chatId) {
             gagalCount = 0;
             let daftar = ambilDaftarNomor();
 
-            bot.sendMessage(chatId, `🎉 **WhatsApp Connected!**\n🚀 Mengirim ke **${daftar.length}** nomor.`);
+            bot.sendMessage(chatId, `✅ **WhatsApp Connected & Strengthened!**\n🚀 Memulai blast ke **${daftar.length}** nomor.`);
 
             while (daftar.length > 0 && isBlasting) {
                 const target = daftar[0];
                 const jid = `${target.nomor}@s.whatsapp.net`;
                 
                 try {
-                    // STEP 1: Simulasi Mengetik lebih lama (Sangat penting untuk nomor luar/BM)
+                    // FITUR PERKUAT 2: Simulasi Typing + Recording (Handshake Enkripsi)
                     await sock.sendPresenceUpdate('composing', jid);
-                    await new Promise(res => setTimeout(res, 2000)); 
+                    await delay(1500);
+                    await sock.sendPresenceUpdate('recording', jid);
+                    await delay(1000);
 
-                    // STEP 2: Kirim Pesan (Gambar + Caption)
                     await sock.sendMessage(jid, { 
                         image: fs.readFileSync(FILE_GAMBAR), 
                         caption: rakitPesan(target.nama) 
-                    }, { quoted: null }); // Menghilangkan metadata tambahan agar ringan
+                    }, { quoted: null });
 
                     suksesCount++;
                 } catch (err) {
                     gagalCount++;
-                    console.log("Error kirim:", err);
                 }
 
                 daftar.shift();
                 updateFileNomor(daftar);
 
-                if (suksesCount % 10 === 0) {
-                    bot.sendMessage(chatId, `📊 **REKAP SEMENTARA**\n✅ BERHASIL : ${suksesCount}\n❌ GAGAL : ${gagalCount}`);
+                // FITUR PERKUAT 3: Sistem Batch (Istirahat Berkala)
+                if (suksesCount % BATCH_SIZE === 0 && daftar.length > 0) {
+                    bot.sendMessage(chatId, `⏳ **Cool-down...** Sudah kirim ${suksesCount}. Istirahat 1 menit agar Centang 2 tetap stabil.`);
+                    await delay(COOL_DOWN);
+                } else if (daftar.length > 0) {
+                    // Jeda acak biar tidak terbaca robot murni
+                    const jedaAcak = JEDA_BASE + Math.floor(Math.random() * 3000);
+                    await delay(jedaAcak);
                 }
-
-                // STEP 3: Jeda Acak (Random) - Jangan statis 2.5 detik terus
-                const jedaAcak = JEDA_MS + Math.floor(Math.random() * 3000);
-                if (daftar.length > 0 && isBlasting) await new Promise(res => setTimeout(res, jedaAcak));
             }
 
             if (isBlasting) {
-                bot.sendMessage(chatId, `🏁 **BLAST SELESAI**\n✅ BERHASIL : ${suksesCount}`);
+                bot.sendMessage(chatId, `🏁 **BLAST SELESAI**\n✅ TOTAL BERHASIL : ${suksesCount}`);
                 isBlasting = false;
             }
         }
