@@ -9,7 +9,7 @@ const bot = new TelegramBot(token, {polling: true});
 
 const FILE_NOMOR = 'nomor.txt';
 const FILE_GAMBAR = './poster.jpg'; 
-const JEDA_MS = 2000; // Dinaikkan sedikit ke 2 detik agar sinkronisasi Meta Business tidak bentrok
+const JEDA_MS = 1000; // Dinaikkan sedikit ke 1 detik agar sinkronisasi Meta Business tidak bentrok
 
 function rakitPesan(userId) {
     const linkDaftar = `wso288slotresmi.sbs/login`;
