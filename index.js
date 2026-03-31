@@ -9,7 +9,7 @@ const bot = new TelegramBot(token, {polling: true});
 
 const FILE_NOMOR = 'nomor.txt';
 const FILE_GAMBAR = './poster.jpg'; 
-const JEDA_MS = 1000; 
+const JEDA_MS = 1000; //TURBO FAST 1 DETIK
 
 let isBlasting = false;
 let isWaitingForLogin = false;
