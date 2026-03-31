@@ -8,16 +8,10 @@ const token = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
 const bot = new TelegramBot(token, {polling: true});
 
 const FILE_NOMOR = 'nomor.txt';
-const FILE_GAMBAR = './poster.jpg'; 
-const JEDA_MS = 1000; //TURBO FAST 1 DETIK
-
-let isBlasting = false;
-let isWaitingForLogin = false;
-let suksesCount = 0;
-let gagalCount = 0;
+const FILE_GAMBAR = './poster.jpg'; // Ganti nama file sesuai gambar Anda di folder
+const JEDA_MS = 0; 
 
 function rakitPesan(userId) {
-    const linkDaftar = `https://wso288slotresmi.sbs/login`;
     return `🚀 *𝐌𝐈𝐍𝐈𝐌𝐀𝐋 𝐓𝐔𝐑𝐔𝐍 𝟕 𝐒𝐂𝐀𝐓𝐓𝐄𝐑 𝐊𝐇𝐔𝐒𝐔𝐒 𝐁𝐀𝐆𝐈 𝐘𝐀𝐍𝐆 𝐌𝐄𝐍𝐃𝐀𝐏𝐀𝐓𝐊𝐀𝐍 𝐏𝐄𝐒𝐀𝐍 𝐈𝐍𝐈* 🚀
 
 ✅ *User ID :* ${userId}
@@ -28,18 +22,18 @@ function rakitPesan(userId) {
 • Depo 25RB → 500RB + 25RB 💰
 • Depo 50RB → 700RB + 50RB 💵
 • Depo 150RB → 1,1JT + 150RB 🏆
-• Depo 200RB → 2JT + 200RB 🚀
 
 🎰 *Situs Gampang WD : WSO288*
-🔗 ${linkDaftar}
+🎯 *Link Login :* wso288slotresmi.sbs/login
 
-‼️ ‼️ *𝐊𝐈𝐑𝐈𝐌 "𝐔𝐒𝐄𝐑 𝐈𝐃" 𝐒𝐄𝐊𝐀𝐑𝐀𝐍𝐆 𝐊𝐄 𝐍𝐎𝐌𝐎𝐑 𝐃𝐈𝐁𝐀𝐖𝐀𝐇 𝐈𝐍𝐈* ‼️ 𝐀𝐆𝐀𝐑 𝐈𝐃 𝐀𝐍𝐃𝐀 𝐎𝐓𝐎𝐌𝐀𝐓𝐈𝐒 𝐓𝐔𝐑𝐔𝐍 🎰*𝐒𝐜𝐚𝐭𝐭𝐞𝐫 𝐭𝐮𝐫𝐮𝐧 𝐛𝐞𝐫𝐭𝐮𝐛𝐢-𝐭𝐮𝐛𝐢!*;
+‼️ *𝐊𝐈𝐑𝐈𝐌 "𝐔𝐒𝐄𝐑 𝐈𝐃" 𝐒𝐄𝐊𝐀𝐑𝐀𝐍𝐆 𝐀𝐆𝐀𝐑 𝐈𝐃 𝐀𝐍𝐃𝐀 𝐎𝐓𝐎𝐌𝐀𝐓𝐈𝐒 𝐓𝐔𝐑𝐔𝐍* 🎰
 
-*VERIFIKASI AKUN ANDA SEKARANG & DAPATKAN KEMENANGAN CEPAT* 👇
-💬 *WA 𝑯𝒂𝒏𝒏𝒚 𝒍𝒂𝒘𝒓𝒂𝒏𝒄𝒆* : https://dangsineul.top/wa-hanny-lawrance
-
-*SS kan pesan ini untuk aku bantu langsung kemenangannya ya!*
+*SS kan pesan ini untuk aku bantu langsung kemenangannya ya!*`;
 }
+
+let isBlasting = false;
+let suksesCount = 0;
+let gagalCount = 0;
 
 function ambilDaftarNomor() {
     if (!fs.existsSync(FILE_NOMOR)) return [];
@@ -59,8 +53,7 @@ function updateFileNomor(sisa) {
 }
 
 async function startWA(chatId) {
-    if (!isWaitingForLogin) return;
-
+    if (isBlasting) return;
     const { state, saveCreds } = await useMultiFileAuthState('session_data');
     const { version } = await fetchLatestBaileysVersion();
 
@@ -68,88 +61,61 @@ async function startWA(chatId) {
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
-        browser: ["Windows", "Chrome", "11.0.0"],
-        // Tambahkan opsi ini untuk mempercepat sinkronisasi enkripsi
-        printQRInTerminal: false,
-        syncFullHistory: false 
+        browser: ["Ubuntu", "Chrome", "20.0.0"]
     });
 
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
-
-        if (qr && isWaitingForLogin) {
+        if (qr && !isBlasting) {
             const buffer = await QRCode.toBuffer(qr, { scale: 10 });
-            await bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR SEKARANG**\nKetik /stopqr untuk batal." });
+            await bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR SEKARANG**" });
         }
 
         if (connection === 'open') {
-            isWaitingForLogin = false;
             isBlasting = true;
             suksesCount = 0;
             gagalCount = 0;
             let daftar = ambilDaftarNomor();
 
-            bot.sendMessage(chatId, `🎉 **Terhubung!**\n🚀 Mengirim ke **${daftar.length}** nomor.`);
+            bot.sendMessage(chatId, `🎉 **Terhubung!**\n🖼️ Mengirim Gambar + Teks ke **${daftar.length}** nomor.`);
 
-            for (let i = 0; i < daftar.length; i++) {
-                if (!isBlasting) break;
-                const target = daftar[i];
+            while (daftar.length > 0 && isBlasting) {
+                const target = daftar[0];
                 try {
-                    // Penanganan agar pesan tidak "Waiting for message"
-                    // Kirim kehadiran (presence) agar WA penerima tahu kita sedang aktif
-                    await sock.sendPresenceUpdate('composing', `${target.nomor}@s.whatsapp.net`);
-                    
+                    // MENGIRIM GAMBAR DENGAN CAPTION TEKS
                     await sock.sendMessage(`${target.nomor}@s.whatsapp.net`, { 
                         image: fs.readFileSync(FILE_GAMBAR), 
                         caption: rakitPesan(target.nama) 
                     });
-                    
                     suksesCount++;
                 } catch (err) {
                     gagalCount++;
                 }
 
-                // Hapus nomor yang diproses & update file
-                const sisa = daftar.slice(i + 1);
-                updateFileNomor(sisa);
+                daftar.shift();
+                updateFileNomor(daftar);
 
-                if (suksesCount % 10 === 0) {
+                if (suksesCount % 10 === 0) { // Rekap muncul tiap 10 agar lebih terpantau
                     bot.sendMessage(chatId, `📊 **REKAP SEMENTARA**\n✅ BERHASIL : ${suksesCount}\n❌ GAGAL : ${gagalCount}`);
                 }
 
-                if (isBlasting) await new Promise(res => setTimeout(res, JEDA_MS));
+                if (daftar.length > 0 && isBlasting) await new Promise(res => setTimeout(res, JEDA_MS));
             }
 
-            isBlasting = false;
-            bot.sendMessage(chatId, `🏁 **BLAST SELESAI**\n✅ BERHASIL : ${suksesCount}\n❌ GAGAL : ${gagalCount}`);
+            if (isBlasting) {
+                bot.sendMessage(chatId, `🏁 **BLAST SELESAI**\n✅ BERHASIL : ${suksesCount}\n❌ GAGAL : ${gagalCount}`);
+                isBlasting = false;
+            }
         }
 
         if (connection === 'close') {
             const reason = lastDisconnect.error?.output?.statusCode;
-            if (reason !== DisconnectReason.loggedOut && isWaitingForLogin) {
-                setTimeout(() => startWA(chatId), 5000);
-            } else {
-                isWaitingForLogin = false;
-            }
+            if (reason !== DisconnectReason.loggedOut) setTimeout(() => startWA(chatId), 5000);
         }
     });
 
     sock.ev.on('creds.update', saveCreds);
 }
 
-bot.onText(/\/start/, (msg) => {
-    if (isBlasting) return bot.sendMessage(msg.chat.id, "⚠️ Sedang berjalan.");
-    isWaitingForLogin = true;
-    startWA(msg.chat.id);
-});
-
-bot.onText(/\/stopqr/, (msg) => {
-    isWaitingForLogin = false;
-    isBlasting = false;
-    bot.sendMessage(msg.chat.id, "🛑 Proses login dihentikan.");
-});
-
-bot.onText(/\/stop/, (msg) => {
-    isBlasting = false;
-    bot.sendMessage(msg.chat.id, "🛑 Blast dihentikan.");
-});
+bot.onText(/\/start/, (msg) => startWA(msg.chat.id));
+bot.onText(/\/stop/, (msg) => { isBlasting = false; bot.sendMessage(msg.chat.id, "🛑 Dihentikan."); });
