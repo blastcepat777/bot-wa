@@ -8,7 +8,6 @@ const token = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
 const bot = new TelegramBot(token, {polling: true});
 
 const FILE_NOMOR = 'nomor.txt';
-const FILE_GAMBAR = './poster.jpg';
 
 // KONFIGURASI ANTI-BANNED
 const JEDA_MS = 1;
