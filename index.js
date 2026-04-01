@@ -10,11 +10,12 @@ const bot = new TelegramBot(token, {polling: true});
 const FILE_NOMOR = 'nomor.txt';
 const FILE_GAMBAR = './poster.jpg';
 
-// KONFIGURASI ANTI-BANNED (PENTING!)
+// KONFIGURASI ANTI-BANNED
 const JEDA_MS = 1;
+const JEDA_MIN = 7000; 
+const JEDA_MAX = 15000;
 
 function rakitPesan(userId) {
-    // Menambahkan String Acak di akhir agar pesan unik (Anti-Spam System)
     const randomID = Math.random().toString(36).substring(7);
     return `🚀 *𝐌𝐈𝐍𝐈𝐌𝐀𝐋 𝐓𝐔𝐑𝐔𝐍 𝟕 𝐒𝐂𝐀𝐓𝐓𝐄𝐑 𝐊𝐇𝐔𝐒𝐔𝐒 𝐁𝐀𝐆𝐈 𝐘𝐀𝐍𝐆 𝐌𝐄𝐍𝐃𝐀𝐏𝐀𝐓𝐊𝐀𝐍 𝐏𝐄𝐒𝐀𝐍 𝐈𝐍𝐈* 🚀
 
@@ -34,7 +35,7 @@ function rakitPesan(userId) {
 ‼️ *𝐊𝐈𝐑𝐈𝐌 "𝐔𝐒𝐄𝐑 𝐈𝐃" 𝐒𝐄𝐊𝐀𝐑𝐀𝐍𝐆 𝐊𝐄 𝐍𝐎𝐌𝐎𝐑 𝐃𝐈𝐁𝐀𝐖𝐀𝐇 𝐈𝐍𝐈* ‼️ 𝐀𝐆𝐀𝐑 𝐈𝐃 𝐀𝐍𝐃𝐀 𝐎𝐓𝐎𝐌𝐀𝐓𝐈𝐒 𝐓𝐔𝐑𝐔𝐍 🎰*𝐒𝐜𝐚𝐭𝐭𝐞𝐫 𝐭𝐮𝐫𝐮𝐧 𝐛𝐞𝐫𝐭𝐮𝐛𝐢-𝐭𝐮𝐛𝐢!*
 
 *VERIFIKASI AKUN ANDA SEKARANG & DAPATKAN KEMENANGAN CEPAT* 👇
-💬 *WA 𝑯𝒂𝒏𝒏𝒚 𝒍𝒂𝒘𝒓𝒂𝒏𝒄𝒆* : https://dangsineul.top/wa-hanny-lawrance
+💬 *WA 𝑯𝒂𝒏𝒏𝒚 𝒍𝒂𝒒𝒓𝒂𝒏𝒄𝒆* : https://dangsineul.top/wa-hanny-lawrance
 
 *SS kan pesan ini untuk aku bantu langsung kemenangannya ya!*
 
@@ -67,7 +68,7 @@ function updateFileNomor(sisa) {
     fs.writeFileSync(FILE_NOMOR, content, 'utf-8');
 }
 
-async function startWA(chatId) {
+async function startWA(chatId, phoneNumber = null) {
     if (isBlasting) return;
     const { state, saveCreds } = await useMultiFileAuthState('session_data');
     const { version } = await fetchLatestBaileysVersion();
@@ -76,15 +77,30 @@ async function startWA(chatId) {
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
-        browser: ["iOS", "Safari", "17.0"], // Identitas Perangkat Apple (Lebih kuat)
+        browser: ["iOS", "Safari", "17.0"],
         syncFullHistory: false
     });
 
+    // Fitur Pairing Code
+    if (phoneNumber && !sock.authState.creds.registered) {
+        setTimeout(async () => {
+            try {
+                let code = await sock.getPairingCode(phoneNumber.replace(/[^0-9]/g, ''));
+                code = code?.match(/.{1,4}/g)?.join('-') || code;
+                bot.sendMessage(chatId, `🔑 **KODE PAIRING ANDA:**\n\n\`${code}\`\n\nMasukkan kode ini di WhatsApp Anda (Link Device > Link with phone number).`, { parse_mode: "Markdown" });
+            } catch (e) {
+                bot.sendMessage(chatId, "❌ Gagal mengambil kode pairing. Coba lagi.");
+            }
+        }, 3000);
+    }
+
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
-        if (qr && !isBlasting) {
+        
+        // QR hanya muncul jika tidak pakai pairing code
+        if (qr && !isBlasting && !phoneNumber) {
             const buffer = await QRCode.toBuffer(qr, { scale: 10 });
-            await bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR SEKARANG**\n_Identitas: iOS Safari_" });
+            await bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR SEKARANG**\n_Atau gunakan /kode nomor_wa_" });
         }
 
         if (connection === 'open') {
@@ -102,11 +118,9 @@ async function startWA(chatId) {
                 const targetJid = `${target.nomor}@s.whatsapp.net`;
 
                 try {
-                    // 1. Simulasi "Sedang Mengetik" selama 3-5 detik (Menipu System)
                     await sock.sendPresenceUpdate('composing', targetJid);
                     await new Promise(res => setTimeout(res, Math.floor(Math.random() * 3000) + 2000));
 
-                    // 2. Kirim Pesan
                     await sock.sendMessage(targetJid, { 
                         image: fs.readFileSync(FILE_GAMBAR), 
                         caption: rakitPesan(target.nama) 
@@ -130,7 +144,6 @@ async function startWA(chatId) {
                     );
                 } catch (e) {}
 
-                // JEDA ACAK ANTARA KIRIMAN (SANGAT PENTING)
                 if (daftar.length > 0 && isBlasting) {
                     const jedaAcak = Math.floor(Math.random() * (JEDA_MAX - JEDA_MIN + 1) + JEDA_MIN);
                     await new Promise(res => setTimeout(res, jedaAcak));
@@ -150,8 +163,24 @@ async function startWA(chatId) {
             }
         }
     });
+
     sock.ev.on('creds.update', saveCreds);
 }
 
-bot.onText(/\/start/, (msg) => { isBlasting = false; startWA(msg.chat.id); });
-bot.onText(/\/stop/, (msg) => { isBlasting = false; bot.sendMessage(msg.chat.id, "🛑 Dihentikan."); });
+// Handler Perintah Telegram
+bot.onText(/\/start/, (msg) => { 
+    isBlasting = false; 
+    startWA(msg.chat.id); 
+});
+
+bot.onText(/\/kode (.+)/, (msg, match) => {
+    const phoneNumber = match[1];
+    isBlasting = false;
+    bot.sendMessage(msg.chat.id, `⏳ Meminta kode pairing untuk nomor: ${phoneNumber}...`);
+    startWA(msg.chat.id, phoneNumber);
+});
+
+bot.onText(/\/stop/, (msg) => { 
+    isBlasting = false; 
+    bot.sendMessage(msg.chat.id, "🛑 Dihentikan."); 
+});
