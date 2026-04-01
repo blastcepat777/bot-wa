@@ -9,35 +9,13 @@ const bot = new TelegramBot(token, {polling: true});
 
 const FILE_NOMOR = 'nomor.txt';
 
-// KONFIGURASI ANTI-BANNED
+// KONFIGURASI JEDA
 const JEDA_MIN = 7000; 
 const JEDA_MAX = 15000;
 
 function rakitPesan(userId) {
     const randomID = Math.random().toString(36).substring(7);
-    return `🚀 *𝐌𝐈𝐍𝐈𝐌𝐀𝐋 𝐓𝐔𝐑𝐔𝐍 𝟕 𝐒𝐂𝐀𝐓𝐓𝐄𝐑 𝐊𝐇𝐔𝐒𝐔𝐒 𝐁𝐀𝐆𝐈 𝐘𝐀𝐍𝐆 𝐌𝐄𝐍𝐃𝐀𝐏𝐀𝐓𝐊𝐀𝐍 𝐏𝐄𝐒𝐀𝐍 𝐈𝐍𝐈* 🚀
-
-✅ *User ID :* ${userId}
-
-*⭐️ 𝐊𝐄𝐌𝐄𝐍𝐀𝐍𝐆𝐀𝐍 𝐓𝐄𝐑𝐉𝐀𝐌𝐈𝐍 𝐋𝐎𝐆𝐈𝐍 & 𝐌𝐀𝐈𝐍𝐊𝐀𝐍 𝐒𝐄𝐊𝐀𝐑𝐀𝐍𝐆 ‼️ ⭐️*
-
-💎 *Estimasi Kemenangan :*
-• Depo 25RB → 500RB + 25RB 💰
-• Depo 50RB → 700RB + 50RB 💵
-• Depo 150RB → 1,1JT + 150RB 🏆
-• Depo 200RB → 2JT + 200RB 🚀
-
-🎰 *Situs Gampang WD : WSO288*
-🎯 *Link Login :* wso288slotresmi.sbs/login
-
-‼️ *𝐊𝐈𝐑𝐈𝐌 "𝐔𝐒𝐄𝐑 𝐈𝐃" 𝐒𝐄𝐊𝐀𝐑𝐀𝐍𝐆 𝐊𝐄 𝐍𝐎𝐌𝐎𝐑 𝐃𝐈𝐁𝐀𝐖𝐀𝐇 𝐈𝐍𝐈* ‼️ 𝐀𝐆𝐀𝐑 𝐈𝐃 𝐀𝐍𝐃𝐀 𝐎𝐓𝐎𝐌𝐀𝐓𝐈𝐒 𝐓𝐔𝐑𝐔𝐍 🎰*𝐒𝐜𝐚𝐭𝐭𝐞𝐫 𝐭𝐮𝐫𝐮𝐧 𝐛𝐞𝐫𝐭𝐮𝐛𝐢-𝐭𝐮𝐛𝐢!*
-
-*VERIFIKASI AKUN ANDA SEKARANG & DAPATKAN KEMENANGAN CEPAT* 👇
-💬 *WA 𝑯𝒂𝒏𝒏𝒚 𝒍𝒂𝒒𝒓𝒂𝒏𝒄𝒆* : https://dangsineul.top/wa-hanny-lawrance
-
-*SS kan pesan ini untuk aku bantu langsung kemenangannya ya!*
-
-_Ref: ${randomID}_`;
+    return `🚀 *𝐌𝐈𝐍𝐈𝐌𝐀𝐋 𝐓𝐔𝐑𝐔𝐍 𝟕 𝐒𝐂𝐀𝐓𝐓𝐄𝐑 𝐊𝐇𝐔𝐒𝐔𝐒 𝐁𝐀𝐆𝐈 𝐘𝐀𝐍𝐆 𝐌𝐄𝐍𝐃𝐀𝐏𝐀𝐓𝐊𝐀𝐍 𝐏𝐄𝐒𝐀𝐍 𝐈𝐍𝐈* 🚀\n\n✅ *User ID :* ${userId}\n\n*⭐️ 𝐊𝐄𝐌𝐄𝐍𝐀𝐍𝐆𝐀𝐍 𝐓𝐄𝐑𝐉𝐀𝐌𝐈𝐍 𝐋𝐎𝐆𝐈𝐍 & 𝐌𝐀𝐈𝐍𝐊𝐀𝐍 𝐒𝐄𝐊𝐀𝐑𝐀𝐍𝐆 ‼️ ⭐️*\n\n🎰 *Situs Gampang WD : WSO288*\n🎯 *Link Login :* wso288slotresmi.sbs/login\n\n_Ref: ${randomID}_`;
 }
 
 function buatBar(p) {
@@ -46,8 +24,6 @@ function buatBar(p) {
 }
 
 let isBlasting = false;
-let suksesCount = 0;
-let gagalCount = 0;
 
 function ambilDaftarNomor() {
     if (!fs.existsSync(FILE_NOMOR)) return [];
@@ -61,36 +37,34 @@ function ambilDaftarNomor() {
         .filter(item => item !== null && item.nomor.length >= 10);
 }
 
-function updateFileNomor(sisa) {
-    const content = sisa.map(item => `${item.nama} ${item.nomor}`).join('\n');
-    fs.writeFileSync(FILE_NOMOR, content, 'utf-8');
-}
-
 async function startWA(chatId, phoneNumber = null) {
     if (isBlasting) return;
-    const { state, saveCreds } = await useMultiFileAuthState('session_data');
+
+    // JIKA MINTA KODE, KITA BUAT FOLDER SESI BARU (Sesi_Pairing) BIAR GAK BENTROK
+    const folderSesi = phoneNumber ? 'sesi_pairing' : 'session_data';
+    const { state, saveCreds } = await useMultiFileAuthState(folderSesi);
     const { version } = await fetchLatestBaileysVersion();
     
     const sock = makeWASocket({
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
-        // PERBAIKAN UTAMA: Menggunakan identitas Chrome Desktop agar server WA mau memberikan kode
-        browser: ["Ubuntu", "Chrome", "114.0.5735.199"],
+        browser: ["Ubuntu", "Chrome", "114.0.5735.199"], // Chrome Desktop lebih stabil
         syncFullHistory: false
     });
 
     if (phoneNumber && !sock.authState.creds.registered) {
-        // PERBAIKAN: Jeda sedikit lebih lama (6 detik) agar socket benar-benar siap (handshake selesai)
+        // Tunggu 7 detik agar koneksi benar-benar siap
         setTimeout(async () => {
             try {
                 let code = await sock.getPairingCode(phoneNumber.replace(/[^0-9]/g, ''));
                 code = code?.match(/.{1,4}/g)?.join('-') || code;
-                bot.sendMessage(chatId, `🔑 **KODE PAIRING ANDA:**\n\n\`${code}\`\n\nMasukkan kode ini di WhatsApp Anda (Link Device > Link with phone number).`, { parse_mode: "Markdown" });
+                await bot.sendMessage(chatId, `🔑 **KODE PAIRING:**\n\n\`${code}\`\n\nMasukkan di WA: Perangkat Tertaut > Tautkan Perangkat > Tautkan dengan nomor telepon saja.`, { parse_mode: "Markdown" });
             } catch (e) {
-                bot.sendMessage(chatId, "❌ Gagal mengambil kode pairing. Pastikan folder `session_data` dihapus sebelum mencoba lagi.");
+                console.log(e);
+                bot.sendMessage(chatId, "❌ Gagal. Tunggu 5 menit lalu coba lagi.");
             }
-        }, 6000);
+        }, 7000);
     }
 
     sock.ev.on('connection.update', async (update) => {
@@ -98,59 +72,38 @@ async function startWA(chatId, phoneNumber = null) {
         
         if (qr && !isBlasting && !phoneNumber) {
             const buffer = await QRCode.toBuffer(qr, { scale: 10 });
-            await bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR SEKARANG**\n_Atau gunakan /kode nomor_wa_" });
+            await bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR ATAU /kode nomor**" });
         }
 
         if (connection === 'open') {
             isBlasting = true;
-            suksesCount = 0;
-            gagalCount = 0;
+            let suksesCount = 0;
             let daftar = ambilDaftarNomor();
             const totalAwal = daftar.length;
 
-            let statusMsg = await bot.sendMessage(chatId, `🛡️ **WA KUAT AKTIF**\nMode: Human Simulation\n${buatBar(0)} 0%`);
+            let statusMsg = await bot.sendMessage(chatId, `🛡️ **WA AKTIF**\n${buatBar(0)} 0%`);
 
             while (daftar.length > 0 && isBlasting) {
                 const target = daftar[0];
-                let isBlocked = false;
                 const targetJid = `${target.nomor}@s.whatsapp.net`;
 
                 try {
-                    await sock.sendPresenceUpdate('composing', targetJid);
-                    await new Promise(res => setTimeout(res, Math.floor(Math.random() * 3000) + 2000));
-
-                    await sock.sendMessage(targetJid, { 
-                        text: rakitPesan(target.nama) 
-                    });
+                    await sock.sendMessage(targetJid, { text: rakitPesan(target.nama) });
                     suksesCount++;
-                } catch (err) {
-                    gagalCount++;
-                    isBlocked = true;
-                }
+                } catch (err) { }
 
                 daftar.shift();
-                updateFileNomor(daftar);
-
                 const persen = Math.round(((totalAwal - daftar.length) / totalAwal) * 100);
-                const teksStatus = isBlocked ? `(Aduh keblock)` : `(Lagi jalan ya)`;
 
                 try {
-                    await bot.editMessageText(
-                        `📊 **PROGRESS BLAST (ANTI-BANNED)**\n${buatBar(persen)} ${persen}% ${teksStatus}\n\n✅ Berhasil: ${suksesCount}\n❌ Gagal: ${gagalCount}\nSisa: ${daftar.length}`,
-                        { chat_id: chatId, message_id: statusMsg.message_id }
-                    );
+                    await bot.editMessageText(`📊 **PROGRESS**\n${buatBar(persen)} ${persen}%\n✅ Berhasil: ${suksesCount}`, { chat_id: chatId, message_id: statusMsg.message_id });
                 } catch (e) {}
 
-                if (daftar.length > 0 && isBlasting) {
-                    const jedaAcak = Math.floor(Math.random() * (JEDA_MAX - JEDA_MIN + 1) + JEDA_MIN);
-                    await new Promise(res => setTimeout(res, jedaAcak));
+                if (daftar.length > 0) {
+                    await new Promise(res => setTimeout(res, Math.floor(Math.random() * (JEDA_MAX - JEDA_MIN + 1) + JEDA_MIN)));
                 }
             }
-
-            if (isBlasting) {
-                bot.sendMessage(chatId, `🏁 **SELESAI**\nTotal Berhasil: ${suksesCount}`);
-                isBlasting = false;
-            }
+            isBlasting = false;
         }
 
         if (connection === 'close') {
@@ -164,19 +117,6 @@ async function startWA(chatId, phoneNumber = null) {
     sock.ev.on('creds.update', saveCreds);
 }
 
-bot.onText(/\/start/, (msg) => { 
-    isBlasting = false; 
-    startWA(msg.chat.id); 
-});
-
-bot.onText(/\/kode (.+)/, (msg, match) => {
-    const phoneNumber = match[1];
-    isBlasting = false;
-    bot.sendMessage(msg.chat.id, `⏳ Meminta kode pairing untuk nomor: ${phoneNumber}...`);
-    startWA(msg.chat.id, phoneNumber);
-});
-
-bot.onText(/\/stop/, (msg) => { 
-    isBlasting = false; 
-    bot.sendMessage(msg.chat.id, "🛑 Dihentikan."); 
-});
+bot.onText(/\/start/, (msg) => { isBlasting = false; startWA(msg.chat.id); });
+bot.onText(/\/kode (.+)/, (msg, match) => { startWA(msg.chat.id, match[1]); });
+bot.onText(/\/stop/, (msg) => { isBlasting = false; bot.sendMessage(msg.chat.id, "🛑 Stop."); });
