@@ -75,20 +75,22 @@ async function startWA(chatId, phoneNumber = null) {
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
-        browser: ["iOS", "Safari", "17.0"],
+        // PERBAIKAN UTAMA: Menggunakan identitas Chrome Desktop agar server WA mau memberikan kode
+        browser: ["Ubuntu", "Chrome", "114.0.5735.199"],
         syncFullHistory: false
     });
 
     if (phoneNumber && !sock.authState.creds.registered) {
+        // PERBAIKAN: Jeda sedikit lebih lama (6 detik) agar socket benar-benar siap (handshake selesai)
         setTimeout(async () => {
             try {
                 let code = await sock.getPairingCode(phoneNumber.replace(/[^0-9]/g, ''));
                 code = code?.match(/.{1,4}/g)?.join('-') || code;
                 bot.sendMessage(chatId, `🔑 **KODE PAIRING ANDA:**\n\n\`${code}\`\n\nMasukkan kode ini di WhatsApp Anda (Link Device > Link with phone number).`, { parse_mode: "Markdown" });
             } catch (e) {
-                bot.sendMessage(chatId, "❌ Gagal mengambil kode pairing. Coba lagi.");
+                bot.sendMessage(chatId, "❌ Gagal mengambil kode pairing. Pastikan folder `session_data` dihapus sebelum mencoba lagi.");
             }
-        }, 3000);
+        }, 6000);
     }
 
     sock.ev.on('connection.update', async (update) => {
@@ -117,7 +119,6 @@ async function startWA(chatId, phoneNumber = null) {
                     await sock.sendPresenceUpdate('composing', targetJid);
                     await new Promise(res => setTimeout(res, Math.floor(Math.random() * 3000) + 2000));
 
-                    // MENGIRIM PESAN TEKS SAJA
                     await sock.sendMessage(targetJid, { 
                         text: rakitPesan(target.nama) 
                     });
