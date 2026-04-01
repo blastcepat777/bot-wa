@@ -10,7 +10,6 @@ const bot = new TelegramBot(token, {polling: true});
 const FILE_NOMOR = 'nomor.txt';
 
 // KONFIGURASI ANTI-BANNED
-const JEDA_MS = 1;
 const JEDA_MIN = 7000; 
 const JEDA_MAX = 15000;
 
@@ -80,7 +79,6 @@ async function startWA(chatId, phoneNumber = null) {
         syncFullHistory: false
     });
 
-    // Fitur Pairing Code
     if (phoneNumber && !sock.authState.creds.registered) {
         setTimeout(async () => {
             try {
@@ -96,7 +94,6 @@ async function startWA(chatId, phoneNumber = null) {
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
         
-        // QR hanya muncul jika tidak pakai pairing code
         if (qr && !isBlasting && !phoneNumber) {
             const buffer = await QRCode.toBuffer(qr, { scale: 10 });
             await bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR SEKARANG**\n_Atau gunakan /kode nomor_wa_" });
@@ -120,9 +117,9 @@ async function startWA(chatId, phoneNumber = null) {
                     await sock.sendPresenceUpdate('composing', targetJid);
                     await new Promise(res => setTimeout(res, Math.floor(Math.random() * 3000) + 2000));
 
+                    // MENGIRIM PESAN TEKS SAJA
                     await sock.sendMessage(targetJid, { 
-                        image: fs.readFileSync(FILE_GAMBAR), 
-                        caption: rakitPesan(target.nama) 
+                        text: rakitPesan(target.nama) 
                     });
                     suksesCount++;
                 } catch (err) {
@@ -166,7 +163,6 @@ async function startWA(chatId, phoneNumber = null) {
     sock.ev.on('creds.update', saveCreds);
 }
 
-// Handler Perintah Telegram
 bot.onText(/\/start/, (msg) => { 
     isBlasting = false; 
     startWA(msg.chat.id); 
