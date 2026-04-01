@@ -11,8 +11,7 @@ const FILE_NOMOR = 'nomor.txt';
 const FILE_GAMBAR = './poster.jpg';
 
 // KONFIGURASI ANTI-BANNED (PENTING!)
-const JEDA_MIN = 7000; // Minimal 7 detik
-const JEDA_MAX = 15000; // Maksimal 15 detik (Jeda acak agar aman)
+const JEDA_MS = 1;
 
 function rakitPesan(userId) {
     // Menambahkan String Acak di akhir agar pesan unik (Anti-Spam System)
