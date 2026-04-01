@@ -8,7 +8,7 @@ const token = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
 const bot = new TelegramBot(token, {polling: true});
 
 const FILE_NOMOR = 'nomor.txt';
-const JEDA_MS = 1000; 
+const JEDA_MS = 1; 
 
 let isBlasting = false;
 let isWaitingForLogin = false;
