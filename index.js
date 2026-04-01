@@ -9,7 +9,7 @@ const bot = new TelegramBot(token, {polling: true});
 
 const FILE_NOMOR = 'nomor.txt';
 const FILE_GAMBAR = './poster.jpg'; 
-const JEDA_MS = 1000; // Fast 1 Detik
+const JEDA_MS = 1000; // SLOW
 
 function rakitPesan(userId) {
     // Link pengganti tombol (bisa diklik langsung)
