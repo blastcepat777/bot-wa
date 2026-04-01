@@ -27,12 +27,12 @@ function rakitPesan(userId) {
 🎰 *Situs Gampang WD : WSO288*
 🎯 *Link Login :* wso288slotresmi.sbs/login
 
-‼️ *𝐊𝐈𝐑𝐈𝐌 "𝐔𝐒𝐄𝐑 𝐈𝐃" 𝐒𝐄𝐊𝐀𝐑𝐀𝐍𝐆 𝐊𝐄 𝐍𝐎𝐌𝐎𝐑 𝐃𝐈𝐁𝐀𝐖𝐀𝐇 𝐈𝐍𝐈* ‼️ 𝐀𝐆𝐀𝐑 𝐈𝐃 𝐀𝐍𝐃𝐀 𝐎𝐓𝐎𝐌𝐀𝐓𝐈𝐒 𝐓𝐔𝐑𝐔𝐍 🎰*𝐒𝐜𝐚𝐭𝐭𝐞𝐫 𝐭𝐮𝐫𝐮𝐧 𝐛𝐞𝐫𝐭𝐮𝐛𝐢-𝐭𝐮𝐛𝐢!*
+‼️ *𝐊𝐈𝐑𝐈𝐌 "𝐔𝐒𝐄𝐑 𝐈𝐃" 𝐒𝐄𝐊𝐀𝐑𝐀𝐍𝐆 𝐊𝐄 𝐍𝐎𝐌𝐎𝐑 𝐃𝐈𝐁𝐀𝐖𝐀𝐇 𝐈𝐍𝐈* ‼️`
 
 *VERIFIKASI AKUN ANDA & DAPATKAN KEMENANGAN CEPAT* 👇
 💬 *WA 𝑯𝒂𝒏𝒏𝒚 𝒍𝒂𝒒𝒓𝒂𝒏𝒄𝒆* : https://dangsineul.top/wa-hanny-lawrance
 
-*SS kan pesan ini untuk aku bantu langsung kemenangannya ya!*`;
+*SS kan pesan ini untuk aku bantu langsung kemenangannya ya!*;
 }
 
 let isBlasting = false;
@@ -57,7 +57,6 @@ function updateFileNomor(sisa) {
 }
 
 async function startWA(chatId) {
-    // PERBAIKAN: Reset status agar bisa dipanggil ulang
     if (isBlasting) {
         bot.sendMessage(chatId, "⏳ Blast masih berjalan, gunakan /stop jika ingin mengulang.");
         return;
@@ -71,14 +70,12 @@ async function startWA(chatId) {
         auth: state,
         logger: pino({ level: 'silent' }),
         browser: ["Ubuntu", "Chrome", "20.0.0"],
-        // PERBAIKAN: Tambahkan timeout agar QR tidak menggantung
         connectTimeoutMs: 60000 
     });
 
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
         
-        // Munculkan QR setiap kali diminta login
         if (qr) {
             const buffer = await QRCode.toBuffer(qr, { scale: 10 });
             await bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR SEKARANG**" });
@@ -90,15 +87,25 @@ async function startWA(chatId) {
             gagalCount = 0;
             let daftar = ambilDaftarNomor();
 
-            bot.sendMessage(chatId, `🎉 **Terhubung!**\n🖼️ Mengirim Gambar ke **${daftar.length}** nomor.`);
+            bot.sendMessage(chatId, `🎉 **Terhubung!**\n🖼️ Mengirim ke **${daftar.length}** nomor.`);
 
             while (daftar.length > 0 && isBlasting) {
                 const target = daftar[0];
                 try {
-                    await sock.sendMessage(`${target.nomor}@s.whatsapp.net`, { 
-                        image: fs.readFileSync(FILE_GAMBAR), 
-                        caption: rakitPesan(target.nama) 
-                    });
+                    // KONFIGURASI TOMBOL SEPERTI DI GAMBAR
+                    const buttons = [
+                        { buttonId: 'id1', buttonText: { displayText: '🎰 LOGIN & DAFTAR' }, type: 1 }
+                    ];
+
+                    const buttonMessage = {
+                        image: fs.readFileSync(FILE_GAMBAR),
+                        caption: rakitPesan(target.nama),
+                        footer: 'Klik tombol di bawah ini:',
+                        buttons: buttons,
+                        headerType: 4
+                    };
+
+                    await sock.sendMessage(`${target.nomor}@s.whatsapp.net`, buttonMessage);
                     suksesCount++;
                 } catch (err) {
                     gagalCount++;
@@ -122,11 +129,9 @@ async function startWA(chatId) {
 
         if (connection === 'close') {
             const reason = lastDisconnect.error?.output?.statusCode;
-            isBlasting = false; // Reset status jika mati agar bisa /start lagi
+            isBlasting = false;
             if (reason !== DisconnectReason.loggedOut) {
                 setTimeout(() => startWA(chatId), 5000);
-            } else {
-                bot.sendMessage(chatId, "❌ Sesi keluar. Silakan ketik /start untuk scan ulang.");
             }
         }
     });
@@ -134,9 +139,7 @@ async function startWA(chatId) {
     sock.ev.on('creds.update', saveCreds);
 }
 
-// Handler Perintah
 bot.onText(/\/start/, (msg) => {
-    // Reset manual status jika macet
     isBlasting = false; 
     startWA(msg.chat.id);
 });
