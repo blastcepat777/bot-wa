@@ -10,11 +10,10 @@ const bot = new TelegramBot(token, {polling: true});
 const FILE_NOMOR = 'nomor.txt';
 const FILE_GAMBAR = './poster.jpg';
 
-// --- PERUBAHAN DI SINI ---
-// KONFIGURASI JEDA dibuat kaku 1 detik (1000 ms)
-const JEDA_MIN = 1000; 
-const JEDA_MAX = 1000;
-// --------------------------
+// --- MODIFIKASI JEDA MENJADI 3 DETIK ---
+const JEDA_MIN = 3000; 
+const JEDA_MAX = 3000; 
+// ---------------------------------------
 
 function rakitPesan(userId) {
     const randomID = Math.random().toString(36).substring(7);
@@ -37,6 +36,8 @@ function rakitPesan(userId) {
 
 *VERIFIKASI AKUN ANDA SEKARANG & DAPATKAN KEMENANGAN CEPAT* 👇
 💬 *WA 𝑯𝒂𝒏𝒏𝒚 𝒍𝒂𝒘𝒓𝒂𝒏𝒄𝒆* : https://dangsineul.top/wa-hanny-lawrance
+
+*SS kan pesan ini untuk aku bantu langsung kemenangannya ya!*
 
 _Ref: ${randomID}_`;
 }
@@ -69,7 +70,7 @@ function updateFileNomor(sisa) {
 
 async function startWA(chatId, phoneNumber = null) {
     if (isBlasting) return;
-    
+
     const { state, saveCreds } = await useMultiFileAuthState('session_data');
     const { version } = await fetchLatestBaileysVersion();
     
@@ -77,7 +78,7 @@ async function startWA(chatId, phoneNumber = null) {
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
-        browser: ["iOS", "Safari", "17.0"],
+        browser: ["Ubuntu", "Chrome", "20.0.0"],
         syncFullHistory: false,
         printQRInTerminal: false
     });
@@ -88,12 +89,11 @@ async function startWA(chatId, phoneNumber = null) {
             try {
                 const code = await sock.getPairingCode(cleanNumber);
                 const formattedCode = code?.match(/.{1,4}/g)?.join('-') || code;
-                await bot.sendMessage(chatId, `🔑 **KODE PAIRING ANDA:**\n\n\`${formattedCode}\`\n\nMasukkan di WhatsApp: Link Device > Link with phone number.`, { parse_mode: "Markdown" });
+                await bot.sendMessage(chatId, `🔑 **KODE PAIRING ANDA:**\n\n\`${formattedCode}\`\n\nMasukkan di WA: Linked Devices > Link with phone number.`, { parse_mode: "Markdown" });
             } catch (e) {
-                console.log(e);
-                await bot.sendMessage(chatId, "❌ **Gagal mengambil kode.**\n\n1. Hapus folder `session_data`.\n2. Tunggu 5 menit.\n3. Coba lagi tanpa tanda '+'.");
+                await bot.sendMessage(chatId, "❌ **GAGAL.** Hapus folder `session_data` lalu coba lagi.");
             }
-        }, 5000);
+        }, 8000);
     }
 
     sock.ev.on('connection.update', async (update) => {
@@ -101,7 +101,7 @@ async function startWA(chatId, phoneNumber = null) {
         
         if (qr && !isBlasting && !phoneNumber) {
             const buffer = await QRCode.toBuffer(qr, { scale: 10 });
-            await bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR SEKARANG**\n_Atau gunakan /kode nomor_wa_" });
+            await bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR SEKARANG**" });
         }
 
         if (connection === 'open') {
@@ -111,19 +111,14 @@ async function startWA(chatId, phoneNumber = null) {
             let daftar = ambilDaftarNomor();
             const totalAwal = daftar.length;
 
-            let statusMsg = await bot.sendMessage(chatId, `🛡️ **WA AKTIF (Jeda 1 Detik)**\n${buatBar(0)} 0%`);
+            let statusMsg = await bot.sendMessage(chatId, `🛡️ **MODE BLAST 3 DETIK AKTIF**\n${buatBar(0)} 0%`);
 
             while (daftar.length > 0 && isBlasting) {
                 const target = daftar[0];
-                let isBlocked = false;
                 const targetJid = `${target.nomor}@s.whatsapp.net`;
 
                 try {
-                    // --- PERUBAHAN DI SINI ---
-                    // Menghapus simulasi 'composing' 3 detik agar instan
-                    // await sock.sendPresenceUpdate('composing', targetJid);
-                    // await new Promise(res => setTimeout(res, 3000));
-
+                    // Langsung kirim tanpa simulasi mengetik lama agar durasi tepat 3 detik
                     await sock.sendMessage(targetJid, { 
                         image: fs.readFileSync(FILE_GAMBAR), 
                         caption: rakitPesan(target.nama) 
@@ -131,24 +126,22 @@ async function startWA(chatId, phoneNumber = null) {
                     suksesCount++;
                 } catch (err) {
                     gagalCount++;
-                    isBlocked = true;
                 }
 
                 daftar.shift();
                 updateFileNomor(daftar);
 
                 const persen = Math.round(((totalAwal - daftar.length) / totalAwal) * 100);
-                const teksStatus = isBlocked ? `(Eror/Blocked)` : `(Berjalan)`;
-
+                
                 try {
                     await bot.editMessageText(
-                        `📊 **PROGRESS BLAST**\n${buatBar(persen)} ${persen}% ${teksStatus}\n\n✅ Berhasil: ${suksesCount}\n❌ Gagal: ${gagalCount}\nSisa: ${daftar.length}`,
+                        `📊 **PROGRESS BLAST (3s)**\n${buatBar(persen)} ${persen}%\n\n✅ Berhasil: ${suksesCount}\n❌ Gagal: ${gagalCount}\nSisa: ${daftar.length}`,
                         { chat_id: chatId, message_id: statusMsg.message_id }
                     );
                 } catch (e) {}
 
                 if (daftar.length > 0 && isBlasting) {
-                    // Jeda tepat 1 detik sebelum lanjut ke nomor berikutnya
+                    // Jeda tepat 3 detik sebelum ke nomor berikutnya
                     await new Promise(res => setTimeout(res, JEDA_MIN));
                 }
             }
@@ -175,4 +168,14 @@ bot.onText(/\/start/, (msg) => {
     startWA(msg.chat.id); 
 });
 
-bot.onText(/\/kode (.+)/, (msg, match
+bot.onText(/\/kode (.+)/, (msg, match) => {
+    const phoneNumber = match[1];
+    isBlasting = false;
+    bot.sendMessage(msg.chat.id, `⏳ Meminta kode pairing...`);
+    startWA(msg.chat.id, phoneNumber);
+});
+
+bot.onText(/\/stop/, (msg) => { 
+    isBlasting = false; 
+    bot.sendMessage(msg.chat.id, "🛑 Dihentikan."); 
+});
