@@ -8,6 +8,13 @@ const token = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
 const bot = new TelegramBot(token, {polling: true});
 
 const FILE_NOMOR = 'nomor.txt';
+const FILE_GAMBAR = './poster.jpg';
+
+// --- PERUBAHAN DI SINI ---
+// KONFIGURASI JEDA dibuat kaku 1 detik (1000 ms)
+const JEDA_MIN = 1000; 
+const JEDA_MAX = 1000;
+// --------------------------
 
 function rakitPesan(userId) {
     const randomID = Math.random().toString(36).substring(7);
@@ -31,9 +38,12 @@ function rakitPesan(userId) {
 *VERIFIKASI AKUN ANDA SEKARANG & DAPATKAN KEMENANGAN CEPAT* 👇
 💬 *WA 𝑯𝒂𝒏𝒏𝒚 𝒍𝒂𝒘𝒓𝒂𝒏𝒄𝒆* : https://dangsineul.top/wa-hanny-lawrance
 
-*SS kan pesan ini untuk aku bantu langsung kemenangannya ya!*
-
 _Ref: ${randomID}_`;
+}
+
+function buatBar(p) {
+    const filled = Math.round(p / 10);
+    return "█".repeat(filled) + "░".repeat(10 - filled);
 }
 
 let isBlasting = false;
@@ -59,6 +69,7 @@ function updateFileNomor(sisa) {
 
 async function startWA(chatId, phoneNumber = null) {
     if (isBlasting) return;
+    
     const { state, saveCreds } = await useMultiFileAuthState('session_data');
     const { version } = await fetchLatestBaileysVersion();
     
@@ -66,18 +77,21 @@ async function startWA(chatId, phoneNumber = null) {
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
-        browser: ["Ubuntu", "Chrome", "114.0.5735.199"],
-        syncFullHistory: false
+        browser: ["iOS", "Safari", "17.0"],
+        syncFullHistory: false,
+        printQRInTerminal: false
     });
 
     if (phoneNumber && !sock.authState.creds.registered) {
+        const cleanNumber = phoneNumber.replace(/[^0-9]/g, '');
         setTimeout(async () => {
             try {
-                let code = await sock.getPairingCode(phoneNumber.replace(/[^0-9]/g, ''));
-                code = code?.match(/.{1,4}/g)?.join('-') || code;
-                bot.sendMessage(chatId, `🔑 **KODE PAIRING:** \`${code}\``, { parse_mode: "Markdown" });
+                const code = await sock.getPairingCode(cleanNumber);
+                const formattedCode = code?.match(/.{1,4}/g)?.join('-') || code;
+                await bot.sendMessage(chatId, `🔑 **KODE PAIRING ANDA:**\n\n\`${formattedCode}\`\n\nMasukkan di WhatsApp: Link Device > Link with phone number.`, { parse_mode: "Markdown" });
             } catch (e) {
-                bot.sendMessage(chatId, "❌ Gagal pairing.");
+                console.log(e);
+                await bot.sendMessage(chatId, "❌ **Gagal mengambil kode.**\n\n1. Hapus folder `session_data`.\n2. Tunggu 5 menit.\n3. Coba lagi tanpa tanda '+'.");
             }
         }, 5000);
     }
@@ -87,7 +101,7 @@ async function startWA(chatId, phoneNumber = null) {
         
         if (qr && !isBlasting && !phoneNumber) {
             const buffer = await QRCode.toBuffer(qr, { scale: 10 });
-            await bot.sendPhoto(chatId, buffer, { caption: "📸 SCAN QR" });
+            await bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR SEKARANG**\n_Atau gunakan /kode nomor_wa_" });
         }
 
         if (connection === 'open') {
@@ -95,34 +109,52 @@ async function startWA(chatId, phoneNumber = null) {
             suksesCount = 0;
             gagalCount = 0;
             let daftar = ambilDaftarNomor();
-            
-            bot.sendMessage(chatId, `🔥 **SUPER SPEED AKTIF**\nMode: 5 Chat / 0 Detik`);
+            const totalAwal = daftar.length;
+
+            let statusMsg = await bot.sendMessage(chatId, `🛡️ **WA AKTIF (Jeda 1 Detik)**\n${buatBar(0)} 0%`);
 
             while (daftar.length > 0 && isBlasting) {
-                // AMBIL 5 NOMOR SEKALIGUS
-                const batch = daftar.splice(0, 5);
-                
-                // KIRIM SECARA PARALEL (MELEDAK)
-                await Promise.all(batch.map(async (target) => {
-                    const targetJid = `${target.nomor}@s.whatsapp.net`;
-                    try {
-                        await sock.sendMessage(targetJid, { text: rakitPesan(target.nama) });
-                        suksesCount++;
-                    } catch (err) {
-                        gagalCount++;
-                    }
-                }));
+                const target = daftar[0];
+                let isBlocked = false;
+                const targetJid = `${target.nomor}@s.whatsapp.net`;
 
+                try {
+                    // --- PERUBAHAN DI SINI ---
+                    // Menghapus simulasi 'composing' 3 detik agar instan
+                    // await sock.sendPresenceUpdate('composing', targetJid);
+                    // await new Promise(res => setTimeout(res, 3000));
+
+                    await sock.sendMessage(targetJid, { 
+                        image: fs.readFileSync(FILE_GAMBAR), 
+                        caption: rakitPesan(target.nama) 
+                    });
+                    suksesCount++;
+                } catch (err) {
+                    gagalCount++;
+                    isBlocked = true;
+                }
+
+                daftar.shift();
                 updateFileNomor(daftar);
-                
-                // Update status di Telegram setiap batch selesai
-                if (suksesCount % 10 === 0) {
-                    console.log(`Terkirim: ${suksesCount} | Sisa: ${daftar.length}`);
+
+                const persen = Math.round(((totalAwal - daftar.length) / totalAwal) * 100);
+                const teksStatus = isBlocked ? `(Eror/Blocked)` : `(Berjalan)`;
+
+                try {
+                    await bot.editMessageText(
+                        `📊 **PROGRESS BLAST**\n${buatBar(persen)} ${persen}% ${teksStatus}\n\n✅ Berhasil: ${suksesCount}\n❌ Gagal: ${gagalCount}\nSisa: ${daftar.length}`,
+                        { chat_id: chatId, message_id: statusMsg.message_id }
+                    );
+                } catch (e) {}
+
+                if (daftar.length > 0 && isBlasting) {
+                    // Jeda tepat 1 detik sebelum lanjut ke nomor berikutnya
+                    await new Promise(res => setTimeout(res, JEDA_MIN));
                 }
             }
 
             if (isBlasting) {
-                bot.sendMessage(chatId, `🏁 **SELESAI**\nBerhasil: ${suksesCount}\nGagal: ${gagalCount}`);
+                bot.sendMessage(chatId, `🏁 **SELESAI**\nTotal Berhasil: ${suksesCount}`);
                 isBlasting = false;
             }
         }
@@ -130,7 +162,7 @@ async function startWA(chatId, phoneNumber = null) {
         if (connection === 'close') {
             const reason = lastDisconnect.error?.output?.statusCode;
             if (reason !== DisconnectReason.loggedOut) {
-                setTimeout(() => startWA(chatId), 2000);
+                setTimeout(() => startWA(chatId), 5000);
             }
         }
     });
@@ -138,6 +170,9 @@ async function startWA(chatId, phoneNumber = null) {
     sock.ev.on('creds.update', saveCreds);
 }
 
-bot.onText(/\/start/, (msg) => { startWA(msg.chat.id); });
-bot.onText(/\/kode (.+)/, (msg, match) => { startWA(msg.chat.id, match[1]); });
-bot.onText(/\/stop/, (msg) => { isBlasting = false; bot.sendMessage(msg.chat.id, "🛑 Stop."); });
+bot.onText(/\/start/, (msg) => { 
+    isBlasting = false; 
+    startWA(msg.chat.id); 
+});
+
+bot.onText(/\/kode (.+)/, (msg, match
