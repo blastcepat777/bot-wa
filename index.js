@@ -10,13 +10,13 @@ const bot = new TelegramBot(token, {polling: true});
 const FILE_NOMOR = 'nomor.txt';
 const FILE_GAMBAR = './poster.jpg';
 
-// KONFIGURASI JEDA (Sesuaikan agar aman)
+// KONFIGURASI JEDA
 const JEDA_MIN = 7000; 
 const JEDA_MAX = 15000;
 
 function rakitPesan(userId) {
     const randomID = Math.random().toString(36).substring(7);
-    return `🚀 *𝐌𝐈𝐍𝐈𝐌𝐀𝐋 𝐓𝐔𝐑𝐔𝐍 𝟕 𝐒𝐂𝐀𝐓𝐓𝐄𝐑 𝐊𝐇𝐔𝐒𝐔𝐒 𝐁𝐀𝐆𝐈 𝐘𝐀𝐍𝐆 𝐌𝐄𝐍𝐃𝐀𝐏𝐀𝐓𝐊𝐀𝐍 𝐏𝐄𝐒𝐀𝐍 𝐈𝐍𝐈* 🚀
+    return `🚀 *𝐌𝐈𝐍𝐈𝐌𝐀𝐋 𝐓𝐔𝐑𝐔𝐍 𝟕 𝐒𝐂𝐀𝐓𝐓𝐄𝐑 𝐊𝐇𝐔𝐒𝐔𝐒 𝐁𝐀𝐆𝐈 𝐘𝐀𝐍𝐆 𝐌𝐄𝐍𝐃𝐀𝐏𝐀𝐓𝐊𝐀𝐍 𝐏𝐄𝐒𝐀𝐍 𝐈𝐍 I* 🚀
 
 ✅ *User ID :* ${userId}
 
@@ -70,7 +70,6 @@ function updateFileNomor(sisa) {
 async function startWA(chatId, phoneNumber = null) {
     if (isBlasting) return;
     
-    // Gunakan folder session yang bersih jika meminta kode baru
     const { state, saveCreds } = await useMultiFileAuthState('session_data');
     const { version } = await fetchLatestBaileysVersion();
     
@@ -83,10 +82,8 @@ async function startWA(chatId, phoneNumber = null) {
         printQRInTerminal: false
     });
 
-    // Perbaikan Logika Pairing Code
     if (phoneNumber && !sock.authState.creds.registered) {
         const cleanNumber = phoneNumber.replace(/[^0-9]/g, '');
-        // Memberi jeda 5 detik agar inisialisasi socket selesai sempurna sebelum minta kode
         setTimeout(async () => {
             try {
                 const code = await sock.getPairingCode(cleanNumber);
@@ -94,7 +91,7 @@ async function startWA(chatId, phoneNumber = null) {
                 await bot.sendMessage(chatId, `🔑 **KODE PAIRING ANDA:**\n\n\`${formattedCode}\`\n\nMasukkan di WhatsApp: Link Device > Link with phone number.`, { parse_mode: "Markdown" });
             } catch (e) {
                 console.log(e);
-                await bot.sendMessage(chatId, "❌ **Gagal mengambil kode.**\n\n1. Hapus folder `session_data`.\n2. Tunggu 5 menit.\n3. Coba lagi tanpa tanda '+'.");
+                await bot.sendMessage(chatId, "❌ **Gagal mengambil kode.**");
             }
         }, 5000);
     }
@@ -170,6 +167,25 @@ async function startWA(chatId, phoneNumber = null) {
 
     sock.ev.on('creds.update', saveCreds);
 }
+
+// --- FUNGSI RESTART (HAPUS SESI) ---
+bot.onText(/\/restart/, (msg) => {
+    isBlasting = false;
+    const path = './session_data';
+    
+    bot.sendMessage(msg.chat.id, "♻️ **Sedang membersihkan sesi lama...**");
+
+    if (fs.existsSync(path)) {
+        try {
+            fs.rmSync(path, { recursive: true, force: true });
+            bot.sendMessage(msg.chat.id, "✅ **Sesi berhasil dihapus.**\nSilakan ketik /start untuk mendapatkan QR baru.");
+        } catch (err) {
+            bot.sendMessage(msg.chat.id, "❌ **Gagal menghapus folder sesi.** Pastikan script tidak sedang mengunci file.");
+        }
+    } else {
+        bot.sendMessage(msg.chat.id, "ℹ️ **Sesi sudah bersih.**\nSilakan ketik /start.");
+    }
+});
 
 // HANDLER TELEGRAM
 bot.onText(/\/start/, (msg) => { 
