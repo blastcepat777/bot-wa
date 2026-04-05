@@ -11,7 +11,7 @@ const FILE_NOMOR = 'nomor.txt';
 const FILE_GAMBAR = './poster.jpg';
 const FILE_PESAN = './script.txt';
 const FILE_TEMP_FILTER = 'database_valid.json'; 
-const JEDA_FILTER = 3000; // Sesuai script asli Anda
+const JEDA_FILTER = 4000; 
 const JEDA_BLAST_MIN = 7000;
 const JEDA_BLAST_MAX = 15000;
 
@@ -71,7 +71,7 @@ async function startWA(chatId, isRelogin = false) {
         
         if (qr) {
             const buffer = await QRCode.toBuffer(qr, { scale: 10 });
-            const caption = isRelogin ? "🔄 **RELOGIN: SCAN QR CLIENT**" : "📸 **SCAN QR PANCINGAN**";
+            const caption = isRelogin ? "🔄 **RELOGIN: SCAN QR UNTUK CLIENT**" : "📸 **SCAN QR PANCINGAN**";
             await bot.sendPhoto(chatId, buffer, { caption });
         }
 
@@ -80,7 +80,7 @@ async function startWA(chatId, isRelogin = false) {
             if (isRelogin && currentDb.length > 0) {
                 bot.sendMessage(chatId, `✅ **CLIENT TERHUBUNG**\n\nDatabase: **${currentDb.length}** nomor.\nKetik 👉 \`/jalankan\``);
             } else {
-                bot.sendMessage(chatId, `✅ **WA TERHUBUNG**\n\nKetik \`/filter\` untuk mulai pancing history.`);
+                bot.sendMessage(chatId, `✅ **WA TERHUBUNG**\n\nKetik \`/filter\` untuk pancing history.`);
             }
         }
 
@@ -93,7 +93,7 @@ async function startWA(chatId, isRelogin = false) {
     sock.ev.on('creds.update', saveCreds);
 }
 
-// --- STEP 2: SILENT FILTER (AUTO DELETE LOCAL) ---
+// --- STEP 2: SILENT FILTER (AUTO-DELETE SISI KITA) ---
 async function prosesFilter(chatId) {
     if (!sock) return bot.sendMessage(chatId, "⚠️ Gunakan `/qr` dulu.");
     if (isProcessing) return;
@@ -115,12 +115,13 @@ async function prosesFilter(chatId) {
         try {
             const [result] = await sock.onWhatsApp(targetJid);
             if (result && result.exists) {
-                // Kirim karakter transparan
-                const sentMsg = await sock.sendMessage(targetJid, { text: "\u200B" }); 
+                // 1. Kirim karakter transparan agar server mencatat chat
+                const pancing = await sock.sendMessage(targetJid, { text: "\u200B" }); 
                 
-                // Langsung hapus HANYA di sisi kita agar history tetap terbentuk
+                // 2. Langsung hapus chat tersebut HANYA di sisi kita agar history tetap terbentuk
+                // tetapi tampilan WhatsApp kita tidak berantakan
                 await sock.chatModify({
-                    clear: { messages: [{ id: sentMsg.key.id, fromMe: true, timestamp: Date.now() }] }
+                    clear: { messages: [{ id: pancing.key.id, fromMe: true, timestamp: Date.now() }] }
                 }, targetJid);
 
                 nomorSudahFilter.push(target);
@@ -141,7 +142,7 @@ async function prosesFilter(chatId) {
     }
 
     isProcessing = false;
-    bot.sendMessage(chatId, `✅ **FILTER SELESAI**\nTotal chat terbuka: **${muatProgress().length}** nomor.\n\nKetik \`/relogin\``);
+    bot.sendMessage(chatId, `✅ **FILTER SELESAI**\nTotal chat terbuka: **${muatProgress().length}** nomor.\n\nLanjut ketik \`/relogin\` untuk masuk akun Client.`);
 }
 
 // --- STEP 3: JALANKAN BLAST ---
@@ -172,4 +173,21 @@ async function prosesJalankan(chatId) {
         } catch (e) {}
 
         const jedaRandom = Math.floor(Math.random() * (JEDA_BLAST_MAX - JEDA_BLAST_MIN + 1) + JEDA_BLAST_MIN);
-        await new
+        await new Promise(res => setTimeout(res, jedaRandom));
+    }
+    isProcessing = false;
+    bot.sendMessage(chatId, `🏁 **DONE!** Terkirim: ${sukses} target.`);
+}
+
+bot.onText(/\/qr/, (msg) => startWA(msg.chat.id));
+bot.onText(/\/filter/, (msg) => prosesFilter(msg.chat.id));
+bot.onText(/\/jalankan/, (msg) => prosesJalankan(msg.chat.id));
+bot.onText(/\/stop/, (msg) => { isProcessing = false; bot.sendMessage(msg.chat.id, "🛑 Berhenti."); });
+bot.onText(/\/relogin/, (msg) => startWA(msg.chat.id, true));
+bot.onText(/\/restart/, (msg) => {
+    isProcessing = false;
+    if (sock) { sock.logout(); sock.end(); }
+    if (fs.existsSync('./session_data')) fs.rmSync('./session_data', { recursive: true, force: true });
+    if (fs.existsSync(FILE_TEMP_FILTER)) fs.unlinkSync(FILE_TEMP_FILTER);
+    bot.sendMessage(msg.chat.id, "♻️ **RESET TOTAL BERHASIL.**");
+});
