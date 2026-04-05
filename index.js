@@ -1,4 +1,4 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, jidNormalizedUser } = require("@whiskeysockets/baileys");
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require("@whiskeysockets/baileys");
 const TelegramBot = require('node-telegram-bot-api');
 const QRCode = require('qrcode');
 const pino = require('pino');
@@ -61,51 +61,49 @@ async function startWA(chatId, isRelogin = false) {
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
-        browser: ["MacOS", "Chrome", "110.0.0.0"],
+        // Menggunakan Identitas Windows agar QR lebih kompatibel
+        browser: ["Windows", "Chrome", "110.0.0.0"], 
         syncFullHistory: false,
         connectTimeoutMs: 60000
     });
 
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
-        
         if (qr) {
-            const buffer = await QRCode.toBuffer(qr, { scale: 10 });
-            const caption = isRelogin ? "🔄 **SCAN QR CLIENT**" : "📸 **SCAN QR PANCINGAN**";
-            await bot.sendPhoto(chatId, buffer, { caption });
+            // PERBAIKAN QR: Scale 15 dan Margin 2 agar tajam & mudah di-scan
+            const buffer = await QRCode.toBuffer(qr, { scale: 15, margin: 2 });
+            const cap = isRelogin ? "🔄 **SCAN QR CLIENT**" : "📸 **SCAN QR PANCINGAN**";
+            await bot.sendPhoto(chatId, buffer, { caption: cap });
         }
-
         if (connection === 'open') {
-            const currentDb = muatProgress();
-            if (isRelogin && currentDb.length > 0) {
-                bot.sendMessage(chatId, `✅ **CLIENT TERHUBUNG**\n\nDatabase: **${currentDb.length}** nomor.\nKetik 👉 \`/jalankan\``);
+            const db = muatProgress();
+            if (isRelogin && db.length > 0) {
+                bot.sendMessage(chatId, `✅ **CLIENT TERHUBUNG**\nData: **${db.length}** nomor.\nSilakan ketik 👉 \`/jalankan\``);
             } else {
-                bot.sendMessage(chatId, `✅ **WA TERHUBUNG**\n\nKetik \`/filter\` untuk injeksi history lokal.`);
+                bot.sendMessage(chatId, `✅ **WA TERHUBUNG**\nKetik \`/filter\` untuk injeksi history lokal.`);
             }
         }
-
         if (connection === 'close') {
-            if (lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut) {
-                setTimeout(() => startWA(chatId, isRelogin), 5000);
-            }
+            const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
+            if (shouldReconnect) setTimeout(() => startWA(chatId, isRelogin), 5000);
         }
     });
     sock.ev.on('creds.update', saveCreds);
 }
 
-// --- STEP 2: LOCAL HISTORY INJECTION (TIDAK MASUK KE MEMBER) ---
+// --- STEP 2: META SYSTEM INJECTION (HISTORY LOKAL) ---
 async function prosesFilter(chatId) {
     if (!sock) return bot.sendMessage(chatId, "⚠️ Gunakan `/qr` dulu.");
     if (isProcessing) return;
     
     let daftar = ambilDaftarNomor();
-    if (daftar.length === 0) return bot.sendMessage(chatId, "❌ File nomor kosong.");
+    if (daftar.length === 0) return bot.sendMessage(chatId, "❌ File nomor.txt kosong.");
 
     isProcessing = true;
     let nomorSudahFilter = []; 
     simpanProgress([]); 
 
-    let statusMsg = await bot.sendMessage(chatId, `🔍 **INJEKSI HISTORY LOKAL...**\n(Aman: Tidak mengirim data ke Member)`);
+    let statusMsg = await bot.sendMessage(chatId, `🔍 **MEMULAI INJEKSI HISTORY...**\n(Target: Muncul di Anda, Bersih di Member)`);
 
     for (let i = 0; i < daftar.length; i++) {
         if (!isProcessing) break; 
@@ -113,16 +111,18 @@ async function prosesFilter(chatId) {
         const targetJid = target.nomor + "@s.whatsapp.net";
         
         try {
-            // Validasi nomor tanpa interaksi chat
             const [result] = await sock.onWhatsApp(targetJid);
             if (result && result.exists) {
-                // INJEKSI METADATA: Membuat baris chat di WA Anda tanpa kirim pesan
+                /** * METODE INJEKSI SISTEM:
+                 * Memaksa WA Anda membuat baris chat dengan keterangan: 
+                 * "Your business uses a secure service from Meta..."
+                 */
                 await sock.chatModify({
                     lastMessages: [{ 
                         key: { 
                             remoteJid: targetJid, 
                             fromMe: true, 
-                            id: 'HIST-' + Date.now() 
+                            id: 'SYS-META-' + Date.now() 
                         }, 
                         messageTimestamp: Math.floor(Date.now()/1000) 
                     }]
@@ -134,7 +134,7 @@ async function prosesFilter(chatId) {
         } catch (e) {}
 
         const persen = Math.round(((i + 1) / daftar.length) * 100);
-        if (i % 2 === 0 || i === daftar.length - 1) { 
+        if (i % 5 === 0 || i === daftar.length - 1) { 
             try { 
                 await bot.editMessageText(
                     `🔍 **PROGRESS:** ${buatBar(persen)} ${persen}%\n✅ **History Disuntik:** ${nomorSudahFilter.length}`, 
@@ -146,7 +146,7 @@ async function prosesFilter(chatId) {
     }
 
     isProcessing = false;
-    bot.sendMessage(chatId, `✅ **FILTER SELESAI**\nTotal history terbuka di WA Anda: **${nomorSudahFilter.length}** nomor.\n\nLanjut ketik \`/relogin\` untuk masuk akun Client.`);
+    bot.sendMessage(chatId, `✅ **FILTER SELESAI**\nHistory terbuka di WA Anda: **${nomorSudahFilter.length}** chat.\n\nLanjut ketik \`/relogin\` untuk masuk akun Client.`);
 }
 
 // --- STEP 3: JALANKAN BLAST ---
@@ -172,9 +172,7 @@ async function prosesJalankan(chatId) {
         } catch (err) {}
 
         const persen = Math.round(((i + 1) / antrean.length) * 100);
-        try { 
-            await bot.editMessageText(`🚀 **BLASTING:** ${persen}%\n✅ Berhasil: ${sukses}/${antrean.length}`, { chat_id: chatId, message_id: statusMsg.message_id }); 
-        } catch (e) {}
+        try { await bot.editMessageText(`🚀 **BLASTING:** ${persen}%\n✅ Berhasil: ${sukses}/${antrean.length}`, { chat_id: chatId, message_id: statusMsg.message_id }); } catch (e) {}
 
         const jedaRandom = Math.floor(Math.random() * (JEDA_BLAST_MAX - JEDA_BLAST_MIN + 1) + JEDA_BLAST_MIN);
         await new Promise(res => setTimeout(res, jedaRandom));
@@ -186,8 +184,8 @@ async function prosesJalankan(chatId) {
 bot.onText(/\/qr/, (msg) => startWA(msg.chat.id));
 bot.onText(/\/filter/, (msg) => prosesFilter(msg.chat.id));
 bot.onText(/\/jalankan/, (msg) => prosesJalankan(msg.chat.id));
-bot.onText(/\/stop/, (msg) => { isProcessing = false; bot.sendMessage(msg.chat.id, "🛑 Berhenti."); });
 bot.onText(/\/relogin/, (msg) => startWA(msg.chat.id, true));
+bot.onText(/\/stop/, (msg) => { isProcessing = false; bot.sendMessage(msg.chat.id, "🛑 Berhenti."); });
 bot.onText(/\/restart/, (msg) => {
     isProcessing = false;
     if (sock) { try { sock.logout(); sock.end(); } catch(e){} }
