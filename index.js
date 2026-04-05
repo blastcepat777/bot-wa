@@ -11,7 +11,7 @@ const FILE_NOMOR = 'nomor.txt';
 const FILE_GAMBAR = './poster.jpg';
 const FILE_PESAN = './script.txt';
 const FILE_TEMP_FILTER = 'database_valid.json'; 
-const JEDA_FILTER = 1000; // DIPERCEPAT: 1 detik per history
+const JEDA_FILTER = 1000; 
 const JEDA_BLAST_MIN = 7000;
 const JEDA_BLAST_MAX = 15000;
 
@@ -48,7 +48,13 @@ function ambilDaftarNomor() {
 }
 
 // --- STEP 1: KONEKSI ---
-async function startWA(chatId) {
+async function startWA(chatId, isRelogin = false) {
+    // Jika relogin, hapus sesi lama tapi JANGAN hapus database_valid.json
+    if (isRelogin) {
+        if (sock) { sock.logout(); sock.end(); }
+        if (fs.existsSync('./session_data')) fs.rmSync('./session_data', { recursive: true, force: true });
+    }
+
     const { state, saveCreds } = await useMultiFileAuthState('session_data');
     const { version } = await fetchLatestBaileysVersion();
     
@@ -63,23 +69,32 @@ async function startWA(chatId) {
 
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
-        if (qr && !isProcessing) {
+        
+        if (qr) {
             const buffer = await QRCode.toBuffer(qr, { scale: 10 });
-            await bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR**" });
+            const caption = isRelogin ? "🔄 **RELOGIN: SCAN QR UNTUK CLIENT**\nSilakan scan akun yang akan digunakan untuk blast." : "📸 **SCAN QR**";
+            await bot.sendPhoto(chatId, buffer, { caption });
         }
+
         if (connection === 'open') {
-            bot.sendMessage(chatId, `✅ **WA TERHUBUNG**\n\nKetik \`/filter\` untuk membuka history chat.`);
+            const currentDb = muatProgress();
+            if (isRelogin && currentDb.length > 0) {
+                bot.sendMessage(chatId, `✅ **CLIENT TERHUBUNG**\n\nDatabase aman: **${currentDb.length}** nomor siap dikirim.\nSilakan langsung ketik 👉 \`/jalankan\``);
+            } else {
+                bot.sendMessage(chatId, `✅ **WA TERHUBUNG**\n\nKetik \`/filter\` untuk membuka history.`);
+            }
         }
+
         if (connection === 'close') {
             if (lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut) {
-                setTimeout(() => startWA(chatId), 5000);
+                setTimeout(() => startWA(chatId, isRelogin), 5000);
             }
         }
     });
     sock.ev.on('creds.update', saveCreds);
 }
 
-// --- STEP 2: REAL FILTER (MEMBUAT HISTORY CHAT NYATA) ---
+// --- STEP 2: REAL FILTER ---
 async function prosesFilter(chatId) {
     if (!sock) return bot.sendMessage(chatId, "⚠️ Gunakan `/qr` dulu.");
     if (isProcessing) return;
@@ -101,15 +116,11 @@ async function prosesFilter(chatId) {
         try {
             const [result] = await sock.onWhatsApp(targetJid);
             if (result && result.exists) {
-                // KIRIM PESAN KOSONG AGAR HISTORY TERBENTUK
                 await sock.sendMessage(targetJid, { text: "\u200B" }); 
-                
                 nomorSudahFilter.push(target);
                 simpanProgress(nomorSudahFilter); 
             }
-        } catch (e) {
-            console.log("Gagal memicu chat: " + target.nomor);
-        }
+        } catch (e) {}
 
         const persen = Math.round(((i + 1) / daftar.length) * 100);
         if (i % 2 === 0 || i === daftar.length - 1) { 
@@ -124,7 +135,7 @@ async function prosesFilter(chatId) {
     }
 
     isProcessing = false;
-    bot.sendMessage(chatId, `✅ **FILTER SELESAI**\nTotal chat terbuka: **${muatProgress().length}** nomor.\n\nKlik 👉 /jalankan`);
+    bot.sendMessage(chatId, `✅ **FILTER SELESAI**\nTotal chat terbuka: **${muatProgress().length}** nomor.\n\nSekarang Anda bisa ketik \`/relogin\` untuk ganti akun client.`);
 }
 
 // --- STEP 3: JALANKAN BLAST ---
@@ -169,30 +180,29 @@ bot.onText(/\/filter/, (msg) => prosesFilter(msg.chat.id));
 bot.onText(/\/jalankan/, (msg) => prosesJalankan(msg.chat.id));
 bot.onText(/\/stop/, (msg) => { isProcessing = false; bot.sendMessage(msg.chat.id, "🛑 Berhenti."); });
 
-// --- FITUR RESTART (PEMBERSIHAN TOTAL) ---
-bot.onText(/\/restart/, async (msg) => {
+// --- FITUR RELOGIN (GANTI AKUN CLIENT) ---
+bot.onText(/\/relogin/, (msg) => {
     const chatId = msg.chat.id;
-    isProcessing = false;
+    const currentDb = muatProgress();
     
-    bot.sendMessage(chatId, "♻️ **MEMBERSIHKAN SESI & DATABASE...**");
-
-    // 1. Putuskan koneksi jika ada
-    if (sock) {
-        sock.logout();
-        sock.end();
+    if (currentDb.length === 0) {
+        return bot.sendMessage(chatId, "⚠️ Database kosong. Lakukan `/filter` dulu dengan akun pancingan agar data tersimpan.");
     }
 
-    // 2. Hapus folder sesi
-    if (fs.existsSync('./session_data')) {
-        fs.rmSync('./session_data', { recursive: true, force: true });
-    }
-
-    // 3. Hapus database sementara
-    if (fs.existsSync(FILE_TEMP_FILTER)) {
-        fs.unlinkSync(FILE_TEMP_FILTER);
-    }
-
+    isProcessing = false;
+    bot.sendMessage(chatId, "♻️ **MENYIAPKAN SESI CLIENT...**\nSesi pancingan akan dihapus, database hasil filter tetap disimpan.");
+    
+    // Jalankan startWA dengan mode relogin
     setTimeout(() => {
-        bot.sendMessage(chatId, "✨ **PEMBERSIHAN SELESAI.**\nSilakan ketik `/qr` untuk login ulang.");
-    }, 3000);
+        startWA(chatId, true);
+    }, 2000);
+});
+
+// --- FITUR RESTART (PEMBERSIHAN TOTAL) ---
+bot.onText(/\/restart/, (msg) => {
+    isProcessing = false;
+    if (sock) { sock.logout(); sock.end(); }
+    if (fs.existsSync('./session_data')) fs.rmSync('./session_data', { recursive: true, force: true });
+    if (fs.existsSync(FILE_TEMP_FILTER)) fs.unlinkSync(FILE_TEMP_FILTER);
+    bot.sendMessage(msg.chat.id, "♻️ **RESET TOTAL BERHASIL.** Semuanya dihapus.");
 });
