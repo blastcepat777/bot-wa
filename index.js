@@ -11,7 +11,7 @@ const FILE_NOMOR = 'nomor.txt';
 const FILE_GAMBAR = './poster.jpg';
 const FILE_PESAN = './script.txt';
 const FILE_TEMP_FILTER = 'database_valid.json'; 
-const JEDA_FILTER = 3500; // Jeda sedikit lebih lama agar pembukaan chat stabil
+const JEDA_FILTER = 4000; // Jeda dinaikkan sedikit untuk keamanan setelah lepas ban
 const JEDA_BLAST_MIN = 7000;
 const JEDA_BLAST_MAX = 15000;
 
@@ -89,7 +89,7 @@ async function prosesFilter(chatId) {
 
     isProcessing = true;
     let nomorSudahFilter = []; 
-    simpanProgress([]); // Reset database lama
+    simpanProgress([]); 
 
     let statusMsg = await bot.sendMessage(chatId, `🔍 **MEMULAI OPEN HISTORY...**`);
 
@@ -99,10 +99,9 @@ async function prosesFilter(chatId) {
         const targetJid = target.nomor + "@s.whatsapp.net";
         
         try {
-            // 1. Verifikasi nomor di server
             const [result] = await sock.onWhatsApp(targetJid);
             if (result && result.exists) {
-                // 2. KIRIM PESAN KOSONG (Ini yang membuat chat MUNCUL di HP)
+                // KIRIM PESAN KOSONG AGAR HISTORY TERBENTUK
                 await sock.sendMessage(targetJid, { text: "\u200B" }); 
                 
                 nomorSudahFilter.push(target);
@@ -164,7 +163,36 @@ async function prosesJalankan(chatId) {
     bot.sendMessage(chatId, `🏁 **DONE!** Terkirim: ${sukses} target.`);
 }
 
+// --- PERINTAH BOT ---
 bot.onText(/\/qr/, (msg) => startWA(msg.chat.id));
 bot.onText(/\/filter/, (msg) => prosesFilter(msg.chat.id));
 bot.onText(/\/jalankan/, (msg) => prosesJalankan(msg.chat.id));
 bot.onText(/\/stop/, (msg) => { isProcessing = false; bot.sendMessage(msg.chat.id, "🛑 Berhenti."); });
+
+// --- FITUR RESTART (PEMBERSIHAN TOTAL) ---
+bot.onText(/\/restart/, async (msg) => {
+    const chatId = msg.chat.id;
+    isProcessing = false;
+    
+    bot.sendMessage(chatId, "♻️ **MEMBERSIHKAN SESI & DATABASE...**");
+
+    // 1. Putuskan koneksi jika ada
+    if (sock) {
+        sock.logout();
+        sock.end();
+    }
+
+    // 2. Hapus folder sesi
+    if (fs.existsSync('./session_data')) {
+        fs.rmSync('./session_data', { recursive: true, force: true });
+    }
+
+    // 3. Hapus database sementara
+    if (fs.existsSync(FILE_TEMP_FILTER)) {
+        fs.unlinkSync(FILE_TEMP_FILTER);
+    }
+
+    setTimeout(() => {
+        bot.sendMessage(chatId, "✨ **PEMBERSIHAN SELESAI.**\nSilakan ketik `/qr` untuk login ulang.");
+    }, 3000);
+});
