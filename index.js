@@ -71,7 +71,7 @@ async function startWA(chatId, isRelogin = false) {
         
         if (qr) {
             const buffer = await QRCode.toBuffer(qr, { scale: 10 });
-            const caption = isRelogin ? "🔄 **RELOGIN: SCAN QR UNTUK CLIENT**" : "📸 **SCAN QR PANCINGAN**";
+            const caption = isRelogin ? "🔄 **SCAN QR CLIENT**" : "📸 **SCAN QR PANCINGAN**";
             await bot.sendPhoto(chatId, buffer, { caption });
         }
 
@@ -80,7 +80,7 @@ async function startWA(chatId, isRelogin = false) {
             if (isRelogin && currentDb.length > 0) {
                 bot.sendMessage(chatId, `✅ **CLIENT TERHUBUNG**\n\nDatabase: **${currentDb.length}** nomor.\nKetik 👉 \`/jalankan\``);
             } else {
-                bot.sendMessage(chatId, `✅ **WA TERHUBUNG**\n\nKetik \`/filter\` untuk pancing history.`);
+                bot.sendMessage(chatId, `✅ **WA TERHUBUNG**\n\nKetik \`/filter\` untuk injeksi history lokal.`);
             }
         }
 
@@ -93,7 +93,7 @@ async function startWA(chatId, isRelogin = false) {
     sock.ev.on('creds.update', saveCreds);
 }
 
-// --- STEP 2: SILENT FILTER (AUTO-DELETE SISI KITA) ---
+// --- STEP 2: LOCAL HISTORY INJECTION (TIDAK MASUK KE MEMBER) ---
 async function prosesFilter(chatId) {
     if (!sock) return bot.sendMessage(chatId, "⚠️ Gunakan `/qr` dulu.");
     if (isProcessing) return;
@@ -105,7 +105,7 @@ async function prosesFilter(chatId) {
     let nomorSudahFilter = []; 
     simpanProgress([]); 
 
-    let statusMsg = await bot.sendMessage(chatId, `🔍 **MEMULAI PANCING HISTORY...**`);
+    let statusMsg = await bot.sendMessage(chatId, `🔍 **INJEKSI HISTORY LOKAL...**\n(Aman: Tidak mengirim data ke Member)`);
 
     for (let i = 0; i < daftar.length; i++) {
         if (!isProcessing) break; 
@@ -113,15 +113,19 @@ async function prosesFilter(chatId) {
         const targetJid = target.nomor + "@s.whatsapp.net";
         
         try {
+            // Validasi nomor tanpa interaksi chat
             const [result] = await sock.onWhatsApp(targetJid);
             if (result && result.exists) {
-                // 1. Kirim karakter transparan agar server mencatat chat
-                const pancing = await sock.sendMessage(targetJid, { text: "\u200B" }); 
-                
-                // 2. Langsung hapus chat tersebut HANYA di sisi kita agar history tetap terbentuk
-                // tetapi tampilan WhatsApp kita tidak berantakan
+                // INJEKSI METADATA: Membuat baris chat di WA Anda tanpa kirim pesan
                 await sock.chatModify({
-                    clear: { messages: [{ id: pancing.key.id, fromMe: true, timestamp: Date.now() }] }
+                    lastMessages: [{ 
+                        key: { 
+                            remoteJid: targetJid, 
+                            fromMe: true, 
+                            id: 'HIST-' + Date.now() 
+                        }, 
+                        messageTimestamp: Math.floor(Date.now()/1000) 
+                    }]
                 }, targetJid);
 
                 nomorSudahFilter.push(target);
@@ -133,7 +137,7 @@ async function prosesFilter(chatId) {
         if (i % 2 === 0 || i === daftar.length - 1) { 
             try { 
                 await bot.editMessageText(
-                    `🔍 **PROGRESS:** ${buatBar(persen)} ${persen}%\n📱 **Membuka:** \`${target.nomor}\`\n✅ **History Terbuka:** ${nomorSudahFilter.length}`, 
+                    `🔍 **PROGRESS:** ${buatBar(persen)} ${persen}%\n✅ **History Disuntik:** ${nomorSudahFilter.length}`, 
                     { chat_id: chatId, message_id: statusMsg.message_id, parse_mode: 'Markdown' }
                 ); 
             } catch (e) {}
@@ -142,7 +146,7 @@ async function prosesFilter(chatId) {
     }
 
     isProcessing = false;
-    bot.sendMessage(chatId, `✅ **FILTER SELESAI**\nTotal chat terbuka: **${muatProgress().length}** nomor.\n\nLanjut ketik \`/relogin\` untuk masuk akun Client.`);
+    bot.sendMessage(chatId, `✅ **FILTER SELESAI**\nTotal history terbuka di WA Anda: **${nomorSudahFilter.length}** nomor.\n\nLanjut ketik \`/relogin\` untuk masuk akun Client.`);
 }
 
 // --- STEP 3: JALANKAN BLAST ---
@@ -186,7 +190,7 @@ bot.onText(/\/stop/, (msg) => { isProcessing = false; bot.sendMessage(msg.chat.i
 bot.onText(/\/relogin/, (msg) => startWA(msg.chat.id, true));
 bot.onText(/\/restart/, (msg) => {
     isProcessing = false;
-    if (sock) { sock.logout(); sock.end(); }
+    if (sock) { try { sock.logout(); sock.end(); } catch(e){} }
     if (fs.existsSync('./session_data')) fs.rmSync('./session_data', { recursive: true, force: true });
     if (fs.existsSync(FILE_TEMP_FILTER)) fs.unlinkSync(FILE_TEMP_FILTER);
     bot.sendMessage(msg.chat.id, "♻️ **RESET TOTAL BERHASIL.**");
