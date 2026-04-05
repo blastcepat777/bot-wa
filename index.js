@@ -11,7 +11,7 @@ const FILE_NOMOR = 'nomor.txt';
 const FILE_GAMBAR = './poster.jpg';
 const FILE_PESAN = './script.txt';
 const FILE_TEMP_FILTER = 'database_valid.json'; 
-const JEDA_FILTER = 3000; 
+const JEDA_FILTER = 4000; // Jeda dinaikkan sedikit untuk keamanan setelah lepas ban
 const JEDA_BLAST_MIN = 7000;
 const JEDA_BLAST_MAX = 15000;
 
