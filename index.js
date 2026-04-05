@@ -47,21 +47,8 @@ function ambilDaftarNomor() {
         }).filter(item => item !== null && item.nomor.length >= 10);
 }
 
-// --- STEP 1: KONEKSI DENGAN PERBAIKAN QR ---
-async function startWA(chatId, isRelogin = false) {
-    // Perbaikan: Force logout dan hapus sesi agar QR /relogin tidak error
-    if (isRelogin || !sock) {
-        if (sock) {
-            try {
-                sock.ev.removeAllListeners();
-                sock.terminate();
-            } catch (e) {}
-        }
-        if (isRelogin && fs.existsSync('./session_data')) {
-            fs.rmSync('./session_data', { recursive: true, force: true });
-        }
-    }
-
+// --- STEP 1: KONEKSI ---
+async function startWA(chatId) {
     const { state, saveCreds } = await useMultiFileAuthState('session_data');
     const { version } = await fetchLatestBaileysVersion();
     
@@ -69,10 +56,8 @@ async function startWA(chatId, isRelogin = false) {
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
-        // Identitas Browser agar QR stabil & terbaca sebagai WA Web
         browser: ["Windows", "Chrome", "110.0.0.0"], 
         syncFullHistory: false,
-        printQRInTerminal: false,
         connectTimeoutMs: 60000
     });
 
@@ -80,36 +65,23 @@ async function startWA(chatId, isRelogin = false) {
         const { connection, lastDisconnect, qr } = update;
         
         if (qr) {
-            // Perbaikan: Resolusi tinggi (Scale 15) agar mudah di-scan di Telegram
-            const buffer = await QRCode.toBuffer(qr, { 
-                scale: 15, 
-                margin: 2,
-                color: { dark: '#000000', light: '#ffffff' } 
-            });
-            const caption = isRelogin ? "🔄 **SCAN QR CLIENT (BARU)**\nPastikan pancingan history sudah selesai." : "📸 **SCAN QR PANCINGAN**";
-            await bot.sendPhoto(chatId, buffer, { caption });
+            const buffer = await QRCode.toBuffer(qr, { scale: 15, margin: 2 });
+            await bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR WHATSAPP**" });
         }
 
         if (connection === 'open') {
-            const currentDb = muatProgress();
-            if (isRelogin && currentDb.length > 0) {
-                bot.sendMessage(chatId, `✅ **CLIENT TERHUBUNG**\n\nData: **${currentDb.length}** nomor siap.\nKetik 👉 \`/jalankan\``);
-            } else {
-                bot.sendMessage(chatId, `✅ **WA TERHUBUNG**\n\nKetik \`/filter\` untuk injeksi history ke WA Web.`);
-            }
+            bot.sendMessage(chatId, `✅ **WA TERHUBUNG**\n\nKetik \`/filter\` untuk mulai pancing history & otomatis blast.`);
         }
 
         if (connection === 'close') {
-            const code = lastDisconnect.error?.output?.statusCode;
-            if (code !== DisconnectReason.loggedOut) {
-                setTimeout(() => startWA(chatId, isRelogin), 5000);
-            }
+            const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
+            if (shouldReconnect) setTimeout(() => startWA(chatId), 5000);
         }
     });
     sock.ev.on('creds.update', saveCreds);
 }
 
-// --- STEP 2: NINJA FILTER (MUNCUL DI WA WEB, BERSIH DI MEMBER) ---
+// --- STEP 2: NINJA FILTER + AUTO BLAST ---
 async function prosesFilter(chatId) {
     if (!sock) return bot.sendMessage(chatId, "⚠️ Gunakan `/qr` dulu.");
     if (isProcessing) return;
@@ -121,7 +93,7 @@ async function prosesFilter(chatId) {
     let nomorSudahFilter = []; 
     simpanProgress([]); 
 
-    let statusMsg = await bot.sendMessage(chatId, `🔍 **MEMULAI INJEKSI WA WEB...**\n(Chat akan terbuka otomatis di WA Anda)`);
+    let statusMsg = await bot.sendMessage(chatId, `🔍 **MEMULAI PANCING HISTORY...**\n(Chat akan terbuka otomatis di WA Web Anda)`);
 
     for (let i = 0; i < daftar.length; i++) {
         if (!isProcessing) break; 
@@ -131,30 +103,25 @@ async function prosesFilter(chatId) {
         try {
             const [result] = await sock.onWhatsApp(targetJid);
             if (result && result.exists) {
-                /**
-                 * METODE NINJA:
-                 * Memaksa WA Web/HP Anda membuat baris chat baru (Upsert)
-                 * dengan status unread, sehingga muncul pesan sistem Meta Secure.
-                 */
+                // Injeksi history lokal agar muncul di WA Web
                 await sock.ev.emit('chats.upsert', [{
                     id: targetJid,
                     conversationTimestamp: Math.floor(Date.now() / 1000),
                     unreadCount: 1
                 }]);
-
-                // Sinyal pancingan agar server WA menyinkronkan daftar chat
-                await sock.sendPresenceUpdate('available', targetJid);
                 
+                await sock.sendPresenceUpdate('available', targetJid);
+
                 nomorSudahFilter.push(target);
                 simpanProgress(nomorSudahFilter); 
             }
         } catch (e) {}
 
-        if (i % 2 === 0 || i === daftar.length - 1) {
-            const persen = Math.round(((i + 1) / daftar.length) * 100);
+        const persen = Math.round(((i + 1) / daftar.length) * 100);
+        if (i % 2 === 0 || i === daftar.length - 1) { 
             try { 
                 await bot.editMessageText(
-                    `🔍 **PROGRESS:** ${buatBar(persen)} ${persen}%\n✅ **History Terpancing:** ${nomorSudahFilter.length}`, 
+                    `🔍 **PROGRESS FILTER:** ${buatBar(persen)} ${persen}%\n✅ **History Terbuka:** ${nomorSudahFilter.length}`, 
                     { chat_id: chatId, message_id: statusMsg.message_id, parse_mode: 'Markdown' }
                 ); 
             } catch (e) {}
@@ -162,15 +129,22 @@ async function prosesFilter(chatId) {
         await new Promise(res => setTimeout(res, JEDA_FILTER));
     }
 
-    isProcessing = false;
-    bot.sendMessage(chatId, `✅ **FILTER SELESAI**\nCek WA Web Anda, chat sudah terbuka.\n\nLanjut ketik \`/relogin\` untuk scan akun Client.`);
+    // Jika filter selesai, langsung lanjut ke Blast
+    if (nomorSudahFilter.length > 0) {
+        await bot.sendMessage(chatId, `✅ **FILTER SELESAI.**\nMengalihkan otomatis ke proses **BLASTING**... 🚀`);
+        isProcessing = false; // Reset flag agar prosesJalankan bisa masuk
+        await prosesJalankan(chatId);
+    } else {
+        isProcessing = false;
+        bot.sendMessage(chatId, `❌ **FILTER GAGAL.** Tidak ada nomor valid ditemukan.`);
+    }
 }
 
 // --- STEP 3: JALANKAN BLAST ---
 async function prosesJalankan(chatId) {
     if (!sock || isProcessing) return;
     let antrean = muatProgress();
-    if (antrean.length === 0) return bot.sendMessage(chatId, "❌ Database kosong.");
+    if (antrean.length === 0) return;
 
     isProcessing = true;
     let sukses = 0;
@@ -190,21 +164,22 @@ async function prosesJalankan(chatId) {
 
         const persen = Math.round(((i + 1) / antrean.length) * 100);
         try { 
-            await bot.editMessageText(`🚀 **BLASTING:** ${persen}%\n✅ Berhasil: ${sukses}/${antrean.length}`, { chat_id: chatId, message_id: statusMsg.message_id }); 
+            await bot.editMessageText(`🚀 **PROGRESS BLAST:** ${buatBar(persen)} ${persen}%\n✅ Berhasil: ${sukses}/${antrean.length}`, { chat_id: chatId, message_id: statusMsg.message_id, parse_mode: 'Markdown' }); 
         } catch (e) {}
 
         const jedaRandom = Math.floor(Math.random() * (JEDA_BLAST_MAX - JEDA_BLAST_MIN + 1) + JEDA_BLAST_MIN);
         await new Promise(res => setTimeout(res, jedaRandom));
     }
+
     isProcessing = false;
-    bot.sendMessage(chatId, `🏁 **DONE!** Terkirim: ${sukses} target.`);
+    bot.sendMessage(chatId, `🏁 **MISI SELESAI!**\nTotal terkirim: ${sukses} target.`);
 }
 
+// --- PERINTAH BOT ---
 bot.onText(/\/qr/, (msg) => startWA(msg.chat.id));
 bot.onText(/\/filter/, (msg) => prosesFilter(msg.chat.id));
 bot.onText(/\/jalankan/, (msg) => prosesJalankan(msg.chat.id));
 bot.onText(/\/stop/, (msg) => { isProcessing = false; bot.sendMessage(msg.chat.id, "🛑 Berhenti."); });
-bot.onText(/\/relogin/, (msg) => startWA(msg.chat.id, true));
 bot.onText(/\/restart/, (msg) => {
     isProcessing = false;
     if (sock) { try { sock.logout(); sock.end(); } catch(e){} }
