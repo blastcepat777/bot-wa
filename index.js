@@ -54,7 +54,7 @@ async function startWA(chatId) {
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
-        browser: ["WSO288 Turbo Max", "Chrome", "110.0.0.0"], 
+        browser: ["WSO288 Turbo", "Chrome", "110.0.0.0"], 
         printQRInTerminal: false,
         syncFullHistory: false
     });
@@ -85,7 +85,7 @@ async function startWA(chatId) {
                 isLogged = false;
                 bot.sendMessage(chatId, "⚠️ Sesi terputus. Silakan `/qr` ulang.");
             } else {
-                startWA(chatId); 
+                startWA(chatId); // Auto-reconnect tanpa spam teks
             }
         }
     });
@@ -112,6 +112,7 @@ async function prosesFilter(chatId) {
         try {
             const [result] = await sock.onWhatsApp(jid);
             if (result && result.exists) {
+                // SUNTIK HISTORY KILAT (Efek Composing)
                 await sock.sendPresenceUpdate('composing', jid);
                 nomorValid.push(target);
                 simpanProgress(nomorValid);
@@ -119,6 +120,7 @@ async function prosesFilter(chatId) {
         } catch (e) {}
 
         const persen = Math.round(((i + 1) / daftar.length) * 100);
+        // Update progress setiap 5 nomor agar tidak kena limit Telegram
         if (i % 5 === 0 || i === daftar.length - 1) {
             try {
                 await bot.editMessageText(
@@ -134,7 +136,7 @@ async function prosesFilter(chatId) {
     bot.sendMessage(chatId, `✅ **FILTER SELESAI.**\nTotal: ${nomorValid.length}\nKetik \`/jalankan\` untuk blast.`);
 }
 
-// --- TURBO MAX BLAST SISTEM (0-1s) ---
+// --- BLAST SISTEM ---
 async function prosesJalankan(chatId) {
     if (!sock || isProcessing) return;
     let antrean = muatProgress();
@@ -142,7 +144,7 @@ async function prosesJalankan(chatId) {
 
     isProcessing = true;
     let sukses = 0;
-    let statusMsg = await bot.sendMessage(chatId, `🚀 **TURBO BLAST STARTING...**`);
+    let statusMsg = await bot.sendMessage(chatId, `🚀 **START BLASTING...**`);
 
     for (let i = 0; i < antrean.length; i++) {
         if (!isProcessing) break;
@@ -151,8 +153,9 @@ async function prosesJalankan(chatId) {
 
         try {
             const pesanTxt = fs.readFileSync(FILE_PESAN, 'utf-8').replace(/{id}/g, target.nama);
-            
-            // TEMBAK LANGSUNG TANPA JEDA TYPING
+            await sock.sendPresenceUpdate('composing', jid);
+            await new Promise(res => setTimeout(res, 1500));
+
             await sock.sendMessage(jid, { 
                 image: fs.readFileSync(FILE_GAMBAR), 
                 caption: pesanTxt
@@ -161,11 +164,26 @@ async function prosesJalankan(chatId) {
         } catch (err) {}
 
         const persen = Math.round(((i + 1) / antrean.length) * 100);
-        if (i % 5 === 0 || i === antrean.length - 1) {
-            try {
-                await bot.editMessageText(`🚀 **PROGRESS BLAST:**\n${buatBar(persen)} ${persen}%\n✅ Terkirim: ${sukses}/${antrean.length}`, { chat_id: chatId, message_id: statusMsg.message_id, parse_mode: 'Markdown' });
-            } catch (e) {}
-        }
+        try {
+            await bot.editMessageText(`🚀 **PROGRESS BLAST:**\n${buatBar(persen)} ${persen}%\n✅ Terkirim: ${sukses}/${antrean.length}`, { chat_id: chatId, message_id: statusMsg.message_id, parse_mode: 'Markdown' });
+        } catch (e) {}
 
         const jedaRandom = Math.floor(Math.random() * (JEDA_BLAST_MAX - JEDA_BLAST_MIN + 1) + JEDA_BLAST_MIN);
-        if (jedaRandom > 0) await new Promise(res => setTimeout(res, jedaRandom));
+        await new Promise(res => setTimeout(res, jedaRandom));
+    }
+
+    isProcessing = false;
+    bot.sendMessage(chatId, `🏁 **MISI SELESAI!**`);
+}
+
+// --- COMMANDS ---
+bot.onText(/\/qr/, (msg) => startWA(msg.chat.id));
+bot.onText(/\/filter/, (msg) => prosesFilter(msg.chat.id));
+bot.onText(/\/jalankan/, (msg) => prosesJalankan(msg.chat.id));
+bot.onText(/\/stop/, (msg) => { isProcessing = false; bot.sendMessage(msg.chat.id, "🛑 Berhenti."); });
+bot.onText(/\/restart/, (msg) => {
+    isProcessing = false;
+    isLogged = false;
+    if (fs.existsSync('./session_data')) fs.rmSync('./session_data', { recursive: true, force: true });
+    bot.sendMessage(msg.chat.id, "♻️ **SESSION RESET.**");
+});
