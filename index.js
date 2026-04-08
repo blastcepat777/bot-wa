@@ -11,16 +11,16 @@ const FILE_NOMOR = 'nomor.txt';
 const FILE_GAMBAR = './poster.jpg';
 const FILE_PESAN = './script.txt';
 const FILE_TEMP_FILTER = 'database_valid.json'; 
-const JEDA_FILTER = 1000; // TURBO: 1 Detik
+const JEDA_FILTER = 1000; // TURBO 1 DETIK
 const JEDA_BLAST_MIN = 8000;
 const JEDA_BLAST_MAX = 15000;
 
 let sock;
 let isProcessing = false;
-let isLogged = false; // Flag agar tidak spam pesan terhubung
+let isLogged = false; 
 let lastQrMsgId = null; 
 
-// --- UTILS ---
+// --- DATABASE SISTEM ---
 function simpanProgress(data) { fs.writeFileSync(FILE_TEMP_FILTER, JSON.stringify(data, null, 2)); }
 function muatProgress() { 
     if (fs.existsSync(FILE_TEMP_FILTER)) {
@@ -45,7 +45,7 @@ function ambilDaftarNomor() {
         }).filter(item => item !== null && item.nomor.length >= 10);
 }
 
-// --- KONEKSI ---
+// --- KONEKSI ANTI-SPAM ---
 async function startWA(chatId) {
     const { state, saveCreds } = await useMultiFileAuthState('session_data');
     const { version } = await fetchLatestBaileysVersion();
@@ -54,7 +54,7 @@ async function startWA(chatId) {
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
-        browser: ["Windows", "Chrome", "110.0.0.0"], 
+        browser: ["WSO288 Turbo", "Chrome", "110.0.0.0"], 
         printQRInTerminal: false,
         syncFullHistory: false
     });
@@ -62,20 +62,18 @@ async function startWA(chatId) {
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
 
-        // Handle QR tanpa spam
         if (qr) {
             const buffer = await QRCode.toBuffer(qr, { scale: 15, margin: 2 });
             if (lastQrMsgId) {
-                // Hapus yang lama agar tidak menumpuk
                 bot.deleteMessage(chatId, lastQrMsgId).catch(() => {});
             }
-            const sentPhoto = await bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR WHATSAPP**\nSegera scan (1 menit expired)." });
+            const sentPhoto = await bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR WHATSAPP**\nSegera scan sebelum expired." });
             lastQrMsgId = sentPhoto.message_id;
         }
 
         if (connection === 'open') {
             lastQrMsgId = null;
-            if (!isLogged) { // Hanya kirim jika sebelumnya belum terhubung
+            if (!isLogged) {
                 isLogged = true;
                 bot.sendMessage(chatId, `✅ **WA TERHUBUNG**\n\nKetik \`/filter\` untuk pancing history.`);
             }
@@ -83,21 +81,18 @@ async function startWA(chatId) {
 
         if (connection === 'close') {
             const code = lastDisconnect.error?.output?.statusCode;
-            const shouldReconnect = code !== DisconnectReason.loggedOut;
-            
             if (code === DisconnectReason.loggedOut) {
                 isLogged = false;
-                bot.sendMessage(chatId, "⚠️ Sesi terputus (Logged Out). Silakan `/qr` ulang.");
-            } else if (shouldReconnect) {
-                // Reconnect tanpa spam pesan terhubung
-                startWA(chatId);
+                bot.sendMessage(chatId, "⚠️ Sesi terputus. Silakan `/qr` ulang.");
+            } else {
+                startWA(chatId); // Auto-reconnect tanpa spam teks
             }
         }
     });
     sock.ev.on('creds.update', saveCreds);
 }
 
-// --- PROSES VALIDATOR ---
+// --- TURBO VALIDATOR (1s) ---
 async function prosesFilter(chatId) {
     if (!sock) return bot.sendMessage(chatId, "⚠️ Gunakan `/qr` dulu.");
     if (isProcessing) return;
@@ -117,7 +112,7 @@ async function prosesFilter(chatId) {
         try {
             const [result] = await sock.onWhatsApp(jid);
             if (result && result.exists) {
-                // SUNTIK HISTORY KILAT
+                // SUNTIK HISTORY KILAT (Efek Composing)
                 await sock.sendPresenceUpdate('composing', jid);
                 nomorValid.push(target);
                 simpanProgress(nomorValid);
@@ -125,7 +120,8 @@ async function prosesFilter(chatId) {
         } catch (e) {}
 
         const persen = Math.round(((i + 1) / daftar.length) * 100);
-        if (i % 5 === 0 || i === daftar.length - 1) { // Edit setiap 5 nomor biar gak limit bot tele
+        // Update progress setiap 5 nomor agar tidak kena limit Telegram
+        if (i % 5 === 0 || i === daftar.length - 1) {
             try {
                 await bot.editMessageText(
                     `🔍 **PROGRESS VALIDATOR:**\n${buatBar(persen)} ${persen}%\n✅ **Valid:** ${nomorValid.length}`,
@@ -140,7 +136,7 @@ async function prosesFilter(chatId) {
     bot.sendMessage(chatId, `✅ **FILTER SELESAI.**\nTotal: ${nomorValid.length}\nKetik \`/jalankan\` untuk blast.`);
 }
 
-// --- PROSES BLAST ---
+// --- BLAST SISTEM ---
 async function prosesJalankan(chatId) {
     if (!sock || isProcessing) return;
     let antrean = muatProgress();
@@ -170,4 +166,24 @@ async function prosesJalankan(chatId) {
         const persen = Math.round(((i + 1) / antrean.length) * 100);
         try {
             await bot.editMessageText(`🚀 **PROGRESS BLAST:**\n${buatBar(persen)} ${persen}%\n✅ Terkirim: ${sukses}/${antrean.length}`, { chat_id: chatId, message_id: statusMsg.message_id, parse_mode: 'Markdown' });
-        }
+        } catch (e) {}
+
+        const jedaRandom = Math.floor(Math.random() * (JEDA_BLAST_MAX - JEDA_BLAST_MIN + 1) + JEDA_BLAST_MIN);
+        await new Promise(res => setTimeout(res, jedaRandom));
+    }
+
+    isProcessing = false;
+    bot.sendMessage(chatId, `🏁 **MISI SELESAI!**`);
+}
+
+// --- COMMANDS ---
+bot.onText(/\/qr/, (msg) => startWA(msg.chat.id));
+bot.onText(/\/filter/, (msg) => prosesFilter(msg.chat.id));
+bot.onText(/\/jalankan/, (msg) => prosesJalankan(msg.chat.id));
+bot.onText(/\/stop/, (msg) => { isProcessing = false; bot.sendMessage(msg.chat.id, "🛑 Berhenti."); });
+bot.onText(/\/restart/, (msg) => {
+    isProcessing = false;
+    isLogged = false;
+    if (fs.existsSync('./session_data')) fs.rmSync('./session_data', { recursive: true, force: true });
+    bot.sendMessage(msg.chat.id, "♻️ **SESSION RESET.**");
+});
