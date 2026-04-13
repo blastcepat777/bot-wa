@@ -11,11 +11,8 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 // --- KONFIGURASI WEB SERVER AGAR RAILWAY TETAP ONLINE ---
 const app = express();
 const PORT = process.env.PORT || 3000;
-app.get('/', (req, res) => res.send('Bot WA Blast Anti-Ban Rotation is Online!'));
+app.get('/', (req, res) => res.send('Bot WA Blast Super Fast is Online!'));
 app.listen(PORT, '0.0.0.0', () => console.log(`Web Server running on port ${PORT}`));
-
-// --- FUNGSI DELAY ACAK ---
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // --------------------------------------------------------
 
@@ -43,20 +40,24 @@ async function initWA(chatId, method, phoneNumber = null) {
 
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
+        
         if (qr && method === 'QR') {
             const buffer = await QRCode.toBuffer(qr, { scale: 10 });
             bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR INI**" });
         }
+        
         if (connection === 'open') {
             bot.sendMessage(chatId, "✅ **WA TERHUBUNG**, silahkan `/filter` untuk membuka history");
         }
+        
         if (connection === 'close') {
             const code = lastDisconnect.error?.output?.statusCode;
+            // Jika bukan logout manual, bot akan otomatis reconnect
             if (code !== DisconnectReason.loggedOut) {
                 initWA(chatId, method, phoneNumber);
             } else {
                 isProcessing = false;
-                bot.sendMessage(chatId, `❌ **WA TERBATASI / LOGOUT**\nSilahkan klik /restart`);
+                bot.sendMessage(chatId, `❌ **WA LOGOUT.** Gunakan /login kembali.`);
             }
         }
     });
@@ -73,7 +74,8 @@ async function initWA(chatId, method, phoneNumber = null) {
     }
 }
 
-// --- TELEGRAM HANDLERS ---
+// --- TELEGRAM COMMANDS ---
+
 bot.onText(/\/login/, (msg) => {
     const opts = { reply_markup: { inline_keyboard: [[{ text: "QR", callback_data: 'login_qr' }, { text: "Kode", callback_data: 'login_code' }]] } };
     bot.sendMessage(msg.chat.id, "Pilih metode login:", opts);
@@ -113,7 +115,7 @@ bot.onText(/\/filter/, async (msg) => {
     } catch (e) { bot.sendMessage(chatId, "❌ Gagal membaca nomor.txt"); }
 });
 
-// --- LOGIKA BLAST DENGAN ROTASI SCRIPT1 & SCRIPT2 ---
+// --- LOGIKA BLAST MODE FAST (0 DETIK) ---
 bot.onText(/\/jalan/, async (msg) => {
     const chatId = msg.chat.id;
     if (isProcessing) return;
@@ -121,12 +123,11 @@ bot.onText(/\/jalan/, async (msg) => {
     successCount = 0;
 
     try {
-        // Load data nomor dan template script
         const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim().length > 5);
         const script1 = fs.readFileSync('script1.txt', 'utf-8');
         const script2 = fs.readFileSync('script2.txt', 'utf-8');
         
-        bot.sendMessage(chatId, "🚀 **BLAST JALAN (MODE ROTASI SCRIPT)...**");
+        bot.sendMessage(chatId, "🚀 **MODE SUPER FAST JALAN (0 DETIK)...**");
         
         for (let i = 0; i < data.length; i++) {
             if (!isProcessing) break;
@@ -137,44 +138,48 @@ bot.onText(/\/jalan/, async (msg) => {
             let nomor = parts[parts.length - 1].replace(/[^0-9]/g, '');
             let jid = nomor + "@s.whatsapp.net";
             
-            // Pilih script secara bergantian (Genap pakai Script 1, Ganjil pakai Script 2)
             let selectedTemplate = (i % 2 === 0) ? script1 : script2;
-            let currentScriptName = (i % 2 === 0) ? "Script 1" : "Script 2";
 
             try {
-                // Status Mengetik
-                await sock.sendPresenceUpdate('composing', jid);
-                
-                // Jeda acak biar gak kaku (1-2 detik)
-                await delay(Math.floor(Math.random() * 1000) + 1000); 
-
                 const pesan = selectedTemplate.replace(/{id}/g, nama);
+                // Kirim pesan langsung tanpa jeda (0 Detik)
                 await sock.sendMessage(jid, { text: pesan });
-                
-                await sock.sendPresenceUpdate('paused', jid);
-                
                 successCount++;
-                console.log(`[${successCount}] Terkirim ke ${nomor} menggunakan ${currentScriptName}`);
-
-                // Jeda antar pesan (1 detik)
-                await delay(1000); 
-                
+                console.log(`[${successCount}] Super Fast -> ${nomor}`);
             } catch (err) {
                 isProcessing = false;
-                bot.sendMessage(chatId, `⚠️ **TERBATASI!** Terhenti di nomor ke-${successCount + 1}\nSilahkan /restart`);
+                bot.sendMessage(chatId, `⚠️ **AKUN TERBATASI!** Terhenti di nomor ke-${successCount + 1}`);
                 return;
             }
         }
         bot.sendMessage(chatId, `🏁 **SELESAI!** Total: ${successCount} pesan terkirim.`);
         isProcessing = false;
     } catch (e) { 
-        bot.sendMessage(chatId, "❌ Pastikan script1.txt dan script2.txt sudah ada."); 
+        bot.sendMessage(chatId, "❌ File script1.txt/script2.txt bermasalah."); 
         isProcessing = false; 
     }
 });
 
-bot.onText(/\/restart/, (msg) => {
-    if (fs.existsSync('./session_data')) fs.rmSync('./session_data', { recursive: true, force: true });
-    bot.sendMessage(msg.chat.id, "♻️ **SESSION DIBERSIHKAN.** Silahkan `/login` lagi.");
-    setTimeout(() => process.exit(0), 1000);
+// --- RESTART PERBAIKAN: TETAP ONLINE DI RAILWAY ---
+bot.onText(/\/restart/, async (msg) => {
+    const chatId = msg.chat.id;
+    isProcessing = false;
+    
+    bot.sendMessage(chatId, "♻️ **MEMBERSIHKAN SESI...**");
+
+    if (sock) {
+        sock.logout(); // Memutus koneksi
+        sock.end();    // Mengakhiri socket
+    }
+
+    // Tunggu sebentar lalu hapus folder
+    setTimeout(() => {
+        if (fs.existsSync('./session_data')) {
+            fs.rmSync('./session_data', { recursive: true, force: true });
+        }
+        bot.sendMessage(chatId, "✅ **SESI BERSIH.** Silahkan `/login` kembali.\n\n*(Proses Railway tetap online)*");
+        
+        // Inisialisasi ulang tanpa mematikan proses node
+        sock = null; 
+    }, 2000);
 });
