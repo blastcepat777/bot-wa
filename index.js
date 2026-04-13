@@ -2,22 +2,21 @@ const { Client, LocalAuth } = require('whatsapp-web.js');
 const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
 
-const token = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
-const bot = new TelegramBot(token, {polling: true});
+// --- KONFIGURASI ---
+const TOKEN = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
+const bot = new TelegramBot(TOKEN, {polling: true});
 
-// --- PENTING: SESUAIKAN PATH INI ---
-// Ganti 'DEKSTOP-GS84EU2' dengan nama user PC kamu
-const CHROME_PATH = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
-const USER_DATA_DIR = 'C:\\Users\\Username\\AppData\\Local\\Google\\Chrome\\User Data';
+// Mengambil jalur User Data Chrome secara otomatis
+const CHROME_DATA = `C:\\Users\\${process.env.USERNAME}\\AppData\\Local\\Google\\Chrome\\User Data`;
 
 const client = new Client({
+    authStrategy: new LocalAuth(),
     puppeteer: {
-        headless: false, // Munculkan Chrome biar bisa kamu pantau
-        executablePath: CHROME_PATH,
-        // Ini kuncinya: Menghubungkan ke sesi Chrome kamu yang sudah ada
+        headless: false, // Munculkan Chrome agar kamu bisa lihat prosesnya
+        executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
         args: [
-            `--user-data-dir=${USER_DATA_DIR}`,
-            '--profile-directory=Default', // Ganti jika kamu pakai Profile 1, Profile 2, dll
+            `--user-data-dir=${CHROME_DATA}`,
+            '--profile-directory=Default', // Ganti 'Profile 1' jika kamu pakai profil lain
             '--no-sandbox'
         ]
     }
@@ -25,54 +24,26 @@ const client = new Client({
 
 let isProcessing = false;
 
-// --- LOGIKA BOT ---
+// --- MENU UTAMA TELEGRAM ---
+const menuUtama = {
+    reply_markup: {
+        inline_keyboard: [
+            [{ text: "🔌 Connect Chrome", callback_data: 'connect' }],
+            [{ text: "🔍 Filter Nomor", callback_data: 'filter' }, { text: "🚀 Start Blast", callback_data: 'blast' }],
+            [{ text: "🛑 Stop", callback_data: 'stop' }]
+        ]
+    }
+};
 
 bot.onText(/\/start/, (msg) => {
-    bot.sendMessage(msg.chat.id, "🤖 **WSO288 CHROME BRIDGE AKTIF**\n\nKetik `/connect` untuk membuka WA di Chrome kamu.");
+    bot.sendMessage(msg.chat.id, "🚀 **WSO288 TURBO PANEL**\nStatus: Ready. Silakan pilih menu:", menuUtama);
 });
 
-bot.onText(/\/connect/, async (msg) => {
-    bot.sendMessage(msg.chat.id, "⏳ Membuka Chrome... Pastikan Chrome asli kamu sudah ditutup semua (Close All Windows) agar tidak bentrok.");
-    try {
-        await client.initialize();
-    } catch (e) {
-        bot.sendMessage(msg.chat.id, "❌ Error: Pastikan semua jendela Chrome sudah ditutup sebelum klik /connect.");
-    }
-});
+// --- LOGIKA TOMBOL ---
+bot.on('callback_query', async (query) => {
+    const chatId = query.message.chat.id;
+    const action = query.data;
 
-client.on('ready', () => {
-    bot.sendMessage(msg.chat.id, "✅ **TERHUBUNG!** Chrome kamu sudah siap kirim pesan.");
-});
-
-bot.onText(/\/jalankan/, async (msg) => {
-    if (isProcessing) return;
-    
-    // Membaca file nomor.txt
-    const rawNumbers = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(n => n.length > 5);
-    const template = fs.readFileSync('script.txt', 'utf-8');
-
-    isProcessing = true;
-    bot.sendMessage(msg.chat.id, `🚀 Blast dimulai ke ${rawNumbers.length} nomor...`);
-
-    for (let line of rawNumbers) {
-        if (!isProcessing) break;
-        let [nama, nomor] = line.split(/\s+/);
-        let num = nomor.replace(/[^0-9]/g, '');
-        if (num.startsWith('0')) num = '62' + num.slice(1);
-
-        try {
-            const pesan = template.replace(/{id}/g, nama);
-            await client.sendMessage(num + "@c.us", pesan);
-            console.log(`Terkirim ke ${num}`);
-        } catch (e) {
-            console.log(`Gagal ke ${num}`);
-        }
-        // Jeda 1-2 detik (Turbo)
-        await new Promise(r => setTimeout(r, 1000));
-    }
-
-    isProcessing = false;
-    bot.sendMessage(msg.chat.id, "🏁 Blast Selesai!");
-});
-
-console.log("🤖 Script Aktif. Pastikan Chrome ditutup dulu, lalu ketik /connect di Telegram.");
+    if (action === 'connect') {
+        bot.sendMessage(chatId, "⏳ Membuka Chrome... (Tutup semua jendela Chrome asli dulu!)");
+        client.initialize().catch
