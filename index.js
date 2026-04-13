@@ -11,10 +11,10 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 // --- KONFIGURASI WEB SERVER AGAR RAILWAY TETAP ONLINE ---
 const app = express();
 const PORT = process.env.PORT || 3000;
-app.get('/', (req, res) => res.send('Bot WA Blast Anti-Ban is Online!'));
+app.get('/', (req, res) => res.send('Bot WA Blast Anti-Ban Rotation is Online!'));
 app.listen(PORT, '0.0.0.0', () => console.log(`Web Server running on port ${PORT}`));
 
-// --- FUNGSI DELAY ACAK (ANTI-BOT PATTERN) ---
+// --- FUNGSI DELAY ACAK ---
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // --------------------------------------------------------
@@ -56,7 +56,7 @@ async function initWA(chatId, method, phoneNumber = null) {
                 initWA(chatId, method, phoneNumber);
             } else {
                 isProcessing = false;
-                bot.sendMessage(chatId, `❌ **WA TERBATASI / LOGOUT**\n\n**REKAP:** ${successCount}\nSilahkan klik /restart`);
+                bot.sendMessage(chatId, `❌ **WA TERBATASI / LOGOUT**\nSilahkan klik /restart`);
             }
         }
     });
@@ -67,14 +67,13 @@ async function initWA(chatId, method, phoneNumber = null) {
                 let code = await sock.requestPairingCode(phoneNumber);
                 bot.sendMessage(chatId, `🔑 **KODE PAIRING ANDA:**\n\n\`${code}\``, { parse_mode: 'Markdown' });
             } catch (err) {
-                bot.sendMessage(chatId, "❌ Gagal meminta kode. Klik /restart.");
+                bot.sendMessage(chatId, "❌ Gagal meminta kode.");
             }
         }, 6000);
     }
 }
 
-// --- TELEGRAM COMMANDS ---
-
+// --- TELEGRAM HANDLERS ---
 bot.onText(/\/login/, (msg) => {
     const opts = { reply_markup: { inline_keyboard: [[{ text: "QR", callback_data: 'login_qr' }, { text: "Kode", callback_data: 'login_code' }]] } };
     bot.sendMessage(msg.chat.id, "Pilih metode login:", opts);
@@ -110,11 +109,11 @@ bot.onText(/\/filter/, async (msg) => {
             let num = line.trim().split(/\s+/).pop().replace(/[^0-9]/g, '') + "@s.whatsapp.net";
             await sock.sendPresenceUpdate('available', num);
         }
-        bot.sendMessage(chatId, "✅ **FILTER SELESAI**. Silahkan `/jalan` untuk blast.");
+        bot.sendMessage(chatId, "✅ **FILTER SELESAI**. Ketik `/jalan` untuk mulai.");
     } catch (e) { bot.sendMessage(chatId, "❌ Gagal membaca nomor.txt"); }
 });
 
-// --- STEP 3: JALAN (ANTI-LIMIT MODE) ---
+// --- LOGIKA BLAST DENGAN ROTASI SCRIPT1 & SCRIPT2 ---
 bot.onText(/\/jalan/, async (msg) => {
     const chatId = msg.chat.id;
     if (isProcessing) return;
@@ -122,44 +121,56 @@ bot.onText(/\/jalan/, async (msg) => {
     successCount = 0;
 
     try {
+        // Load data nomor dan template script
         const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim().length > 5);
-        const scriptTemplate = fs.readFileSync('script.txt', 'utf-8');
-        bot.sendMessage(chatId, "🚀 **BLAST JALAN (ANTI-LIMIT MODE)...**");
+        const script1 = fs.readFileSync('script1.txt', 'utf-8');
+        const script2 = fs.readFileSync('script2.txt', 'utf-8');
         
-        for (let line of data) {
+        bot.sendMessage(chatId, "🚀 **BLAST JALAN (MODE ROTASI SCRIPT)...**");
+        
+        for (let i = 0; i < data.length; i++) {
             if (!isProcessing) break;
+
+            let line = data[i];
             let parts = line.trim().split(/\s+/);
             let nama = parts[0];
             let nomor = parts[parts.length - 1].replace(/[^0-9]/g, '');
             let jid = nomor + "@s.whatsapp.net";
             
+            // Pilih script secara bergantian (Genap pakai Script 1, Ganjil pakai Script 2)
+            let selectedTemplate = (i % 2 === 0) ? script1 : script2;
+            let currentScriptName = (i % 2 === 0) ? "Script 1" : "Script 2";
+
             try {
-                // 1. Simulasi "Sedang Mengetik" agar terlihat manusiawi
+                // Status Mengetik
                 await sock.sendPresenceUpdate('composing', jid);
                 
-                // 2. Jeda acak 1 - 2 detik sebelum kirim (biar gak kaku)
+                // Jeda acak biar gak kaku (1-2 detik)
                 await delay(Math.floor(Math.random() * 1000) + 1000); 
 
-                const pesan = scriptTemplate.replace(/{id}/g, nama);
+                const pesan = selectedTemplate.replace(/{id}/g, nama);
                 await sock.sendMessage(jid, { text: pesan });
                 
-                // 3. Matikan status mengetik
                 await sock.sendPresenceUpdate('paused', jid);
                 
                 successCount++;
+                console.log(`[${successCount}] Terkirim ke ${nomor} menggunakan ${currentScriptName}`);
 
-                // 4. Jeda total antar kontak (Rata-rata 1-2 detik)
+                // Jeda antar pesan (1 detik)
                 await delay(1000); 
                 
             } catch (err) {
                 isProcessing = false;
-                bot.sendMessage(chatId, `⚠️ **AKUN TERBATASI!**\n**Terakhir Terkirim:** ${successCount}\nSilahkan /restart`);
+                bot.sendMessage(chatId, `⚠️ **TERBATASI!** Terhenti di nomor ke-${successCount + 1}\nSilahkan /restart`);
                 return;
             }
         }
-        bot.sendMessage(chatId, `🏁 **SELESAI!** Total: ${successCount}`);
+        bot.sendMessage(chatId, `🏁 **SELESAI!** Total: ${successCount} pesan terkirim.`);
         isProcessing = false;
-    } catch (e) { bot.sendMessage(chatId, "❌ Error pada file."); isProcessing = false; }
+    } catch (e) { 
+        bot.sendMessage(chatId, "❌ Pastikan script1.txt dan script2.txt sudah ada."); 
+        isProcessing = false; 
+    }
 });
 
 bot.onText(/\/restart/, (msg) => {
