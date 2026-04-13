@@ -10,57 +10,80 @@ const FILE_NOMOR = 'nomor.txt';
 const FILE_PESAN = './script.txt';
 const FILE_TEMP_FILTER = 'database_valid.json';
 
-// Inisialisasi WhatsApp Client
+// Inisialisasi Chrome
 const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
-        headless: false, // Memunculkan Chrome
-        executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', // UNTUK WINDOWS (Jika error, hapus baris ini)
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-extensions'
-        ]
+        headless: false, 
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
     }
 });
 
 let isProcessing = false;
 let targetChatId = null;
 
-// --- EVENT WHATSAPP ---
+// --- KONEKSI WA ---
 client.on('qr', async (qr) => {
-    console.log("👉 QR DITERIMA, KIRIM KE TELEGRAM...");
     if (targetChatId) {
         const buffer = await QRCode.toBuffer(qr);
-        bot.sendPhoto(targetChatId, buffer, { caption: "📸 **SCAN QR DI CHROME KAMU**" });
+        bot.sendPhoto(targetChatId, buffer, { caption: "📸 **SCAN QR DI CHROME**" });
     }
 });
 
 client.on('ready', () => {
-    console.log('✅ CHROME SIAP!');
+    console.log('✅ Chrome Ready!');
     if (targetChatId) bot.sendMessage(targetChatId, "✅ **CHROME TERHUBUNG!**");
 });
 
-client.on('auth_failure', () => {
-    console.error('❌ Gagal login, coba hapus folder .wwebjs_auth');
-});
-
-// --- KONTROL TELEGRAM ---
+// --- PERINTAH TELEGRAM ---
 bot.onText(/\/qr/, (msg) => {
     targetChatId = msg.chat.id;
-    bot.sendMessage(targetChatId, "⏳ Mencoba membuka Chrome... Cek taskbar kamu.");
-    client.initialize().catch(e => {
-        console.error(e);
-        bot.sendMessage(targetChatId, "❌ Gagal buka Chrome. Pastikan Google Chrome sudah terinstal.");
-    });
+    bot.sendMessage(targetChatId, "⏳ Membuka Chrome...");
+    client.initialize().catch(e => console.log("Error Init: " + e.message));
 });
 
-// Fungsi Filter & Jalankan tetap sama seperti sebelumnya...
-// (Tambahkan kode filter & jalankan kamu di sini)
+bot.onText(/\/filter/, async (msg) => {
+    if (isProcessing) return;
+    const rawData = fs.readFileSync(FILE_NOMOR, 'utf-8').split('\n').filter(l => l.trim() !== '');
+    isProcessing = true;
+    let valid = [];
+    bot.sendMessage(msg.chat.id, "🔍 Memulai Filter...");
+
+    for (let line of rawData) {
+        if (!isProcessing) break;
+        let num = line.split(/\s+/).pop().replace(/[^0-9]/g, '');
+        if (num.startsWith('0')) num = '62' + num.slice(1);
+        try {
+            const isRegistered = await client.isRegisteredUser(num + "@c.us");
+            if (isRegistered) valid.push({ nama: line.split(/\s+/)[0], nomor: num });
+        } catch (e) {}
+    }
+    fs.writeFileSync(FILE_TEMP_FILTER, JSON.stringify(valid, null, 2));
+    isProcessing = false;
+    bot.sendMessage(msg.chat.id, `✅ Selesai! Valid: ${valid.length}`);
+});
+
+bot.onText(/\/jalankan/, async (msg) => {
+    if (isProcessing) return;
+    let antrean = JSON.parse(fs.readFileSync(FILE_TEMP_FILTER, 'utf-8') || '[]');
+    isProcessing = true;
+    bot.sendMessage(msg.chat.id, "🚀 Blast dimulai...");
+
+    for (let item of antrean) {
+        if (!isProcessing) break;
+        try {
+            const pesan = fs.readFileSync(FILE_PESAN, 'utf-8').replace(/{id}/g, item.nama);
+            await client.sendMessage(item.nomor + "@c.us", pesan);
+        } catch (e) {}
+        await new Promise(r => setTimeout(r, 1000));
+    }
+    isProcessing = false;
+    bot.sendMessage(msg.chat.id, "🏁 Selesai!");
+});
 
 bot.onText(/\/stop/, (msg) => {
     isProcessing = false;
     bot.sendMessage(msg.chat.id, "🛑 Berhenti.");
 });
 
-console.log("🤖 Sistem Remote Aktif. Ketik /qr di Telegram.");
+console.log("🤖 Sistem Aktif...");
