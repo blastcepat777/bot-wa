@@ -20,6 +20,9 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log(`Web Server running on port ${PORT}`);
 });
 
+// --- FUNGSI DELAY UNTUK JEDA 1 DETIK ---
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 // --------------------------------------------------------
 
 let sock;
@@ -35,7 +38,6 @@ async function initWA(chatId, method, phoneNumber = null) {
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
-        // PERBAIKAN: Gunakan identitas browser standar agar tidak ditolak WhatsApp
         browser: ["Ubuntu", "Chrome", "20.0.04"], 
         syncFullHistory: false,
         markOnlineOnConnect: true,
@@ -70,9 +72,7 @@ async function initWA(chatId, method, phoneNumber = null) {
         }
     });
 
-    // --- PERBAIKAN REQUEST KODE PAIRING ---
     if (method === 'CODE' && phoneNumber && !sock.authState.creds.registered) {
-        // Jeda ditingkatkan ke 6 detik untuk stabilitas Railway
         setTimeout(async () => {
             try {
                 let code = await sock.requestPairingCode(phoneNumber);
@@ -140,6 +140,7 @@ bot.onText(/\/filter/, async (msg) => {
     }
 });
 
+// --- STEP 3: JALAN (MODE 1 DETIK) ---
 bot.onText(/\/jalan/, async (msg) => {
     const chatId = msg.chat.id;
     if (isProcessing) return;
@@ -148,7 +149,7 @@ bot.onText(/\/jalan/, async (msg) => {
     try {
         const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim().length > 5);
         const scriptTemplate = fs.readFileSync('script.txt', 'utf-8');
-        bot.sendMessage(chatId, "🚀 **BLAST JALAN (MODE FAST 0 DETIK)...**");
+        bot.sendMessage(chatId, "🚀 **BLAST JALAN (MODE JEDA 1 DETIK)...**");
         
         for (let line of data) {
             if (!isProcessing) break;
@@ -161,6 +162,10 @@ bot.onText(/\/jalan/, async (msg) => {
                 const pesan = scriptTemplate.replace(/{id}/g, nama);
                 await sock.sendMessage(jid, { text: pesan });
                 successCount++;
+                
+                // JEDA 1 DETIK SETIAP KIRIM PESAN
+                await delay(1000); 
+                
             } catch (err) {
                 isProcessing = false;
                 bot.sendMessage(chatId, `⚠️ **WA TERBLOKIR!**\n\n**REKAP TERKIRIM:** ${successCount}\n\nSilahkan klik /restart`);
