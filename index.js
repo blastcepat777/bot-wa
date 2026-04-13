@@ -10,11 +10,13 @@ const FILE_NOMOR = 'nomor.txt';
 const FILE_PESAN = './script.txt';
 const FILE_TEMP_FILTER = 'database_valid.json';
 
-// Inisialisasi Chrome
+// Inisialisasi Chrome (PC Sendiri)
 const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
-        headless: false, 
+        headless: false, // WAJIB false supaya Chrome muncul
+        // Baris di bawah ini untuk memanggil Chrome asli Windows
+        executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', 
         args: ['--no-sandbox', '--disable-setuid-sandbox']
     }
 });
@@ -22,24 +24,26 @@ const client = new Client({
 let isProcessing = false;
 let targetChatId = null;
 
-// --- KONEKSI WA ---
+// --- EVENT WHATSAPP ---
 client.on('qr', async (qr) => {
     if (targetChatId) {
         const buffer = await QRCode.toBuffer(qr);
-        bot.sendPhoto(targetChatId, buffer, { caption: "📸 **SCAN QR DI CHROME**" });
+        bot.sendPhoto(targetChatId, buffer, { caption: "📸 **SCAN QR DI CHROME KAMU**" });
     }
 });
 
 client.on('ready', () => {
     console.log('✅ Chrome Ready!');
-    if (targetChatId) bot.sendMessage(targetChatId, "✅ **CHROME TERHUBUNG!**");
+    if (targetChatId) bot.sendMessage(targetChatId, "✅ **CHROME TERHUBUNG!**\nSekarang bisa /filter atau /jalankan.");
 });
 
-// --- PERINTAH TELEGRAM ---
+// --- KONTROL TELEGRAM ---
 bot.onText(/\/qr/, (msg) => {
     targetChatId = msg.chat.id;
-    bot.sendMessage(targetChatId, "⏳ Membuka Chrome...");
-    client.initialize().catch(e => console.log("Error Init: " + e.message));
+    bot.sendMessage(targetChatId, "⏳ Membuka Chrome di PC kamu...");
+    client.initialize().catch(e => {
+        console.log("Error: Pastikan Chrome sudah terinstal di C:\\Program Files\\Google\\Chrome");
+    });
 });
 
 bot.onText(/\/filter/, async (msg) => {
@@ -47,7 +51,7 @@ bot.onText(/\/filter/, async (msg) => {
     const rawData = fs.readFileSync(FILE_NOMOR, 'utf-8').split('\n').filter(l => l.trim() !== '');
     isProcessing = true;
     let valid = [];
-    bot.sendMessage(msg.chat.id, "🔍 Memulai Filter...");
+    bot.sendMessage(msg.chat.id, "🔍 Memulai Filter (Lihat di Chrome)...");
 
     for (let line of rawData) {
         if (!isProcessing) break;
@@ -67,7 +71,7 @@ bot.onText(/\/jalankan/, async (msg) => {
     if (isProcessing) return;
     let antrean = JSON.parse(fs.readFileSync(FILE_TEMP_FILTER, 'utf-8') || '[]');
     isProcessing = true;
-    bot.sendMessage(msg.chat.id, "🚀 Blast dimulai...");
+    bot.sendMessage(msg.chat.id, "🚀 Blast dimulai (Cek jendela Chrome!)");
 
     for (let item of antrean) {
         if (!isProcessing) break;
@@ -78,12 +82,15 @@ bot.onText(/\/jalankan/, async (msg) => {
         await new Promise(r => setTimeout(r, 1000));
     }
     isProcessing = false;
-    bot.sendMessage(msg.chat.id, "🏁 Selesai!");
+    bot.sendMessage(msg.chat.id, "🏁 Blast Selesai!");
 });
 
 bot.onText(/\/stop/, (msg) => {
     isProcessing = false;
-    bot.sendMessage(msg.chat.id, "🛑 Berhenti.");
+    bot.sendMessage(msg.chat.id, "🛑 Proses Dihentikan.");
 });
 
-console.log("🤖 Sistem Aktif...");
+// Menangani Error Global agar tidak crash
+process.on('uncaughtException', (err) => { console.log('Ada Error: ' + err.message); });
+
+console.log("🤖 BOT AKTIF! Ketik /qr di Telegram.");
