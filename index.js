@@ -1,128 +1,105 @@
-const { Client, LocalAuth } = require('whatsapp-web.js');
+const { default: makeWASocket, useMultiFileAuthState, delay } = require("@whiskeysockets/baileys");
 const TelegramBot = require('node-telegram-bot-api');
-const QRCode = require('qrcode');
+const pino = require('pino');
 const fs = require('fs');
 
 const token = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
 const bot = new TelegramBot(token, {polling: true});
 
-const FILE_NOMOR = 'nomor.txt';
-const FILE_PESAN = './script.txt';
-const FILE_TEMP_FILTER = 'database_valid.json';
-
-// Inisialisasi Chrome dengan proteksi RAM
-const client = new Client({
-    authStrategy: new LocalAuth(),
-    puppeteer: {
-        headless: false,
-        executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu'
-        ]
-    }
-});
-
+let sock;
 let isProcessing = false;
-let targetChatId = null;
 
-// --- PROTEKSI CRASH GLOBAL ---
-process.on('uncaughtException', (err) => {
-    console.error('💥 CRASH TERHINDARI (Uncaught Exception):', err.message);
-});
+async function startWA(chatId, phoneNumber) {
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info');
+    
+    sock = makeWASocket({
+        auth: state,
+        logger: pino({ level: 'silent' }),
+        browser: ["Ubuntu", "Chrome", "20.0.04"]
+    });
 
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('💥 CRASH TERHINDARI (Unhandled Rejection):', reason);
-});
-
-// --- EVENT WHATSAPP ---
-client.on('qr', async (qr) => {
-    console.log("📸 QR Code muncul, silakan cek Telegram...");
-    if (targetChatId) {
-        try {
-            const buffer = await QRCode.toBuffer(qr);
-            await bot.sendPhoto(targetChatId, buffer, { caption: "📸 **SCAN QR DI CHROME KAMU**" });
-        } catch (e) { console.log("Gagal kirim QR"); }
+    // JIKA BELUM LOGIN, MINTA KODE PAIRING
+    if (!sock.authState.creds.registered) {
+        if (!phoneNumber) {
+            return bot.sendMessage(chatId, "❌ Gagal. Gunakan format: `/login 628xxx` untuk dpt kode.");
+        }
+        
+        setTimeout(async () => {
+            try {
+                let code = await sock.requestPairingCode(phoneNumber);
+                bot.sendMessage(chatId, `🔑 **KODE PAIRING KAMU:**\n\n#️⃣   \`${code}\`   #️⃣\n\n**Cara Masukkan:**\n1. Buka WA HP > Titik 3 > Perangkat Tertaut.\n2. Pilih Tautkan Perangkat.\n3. Pilih **Tautkan dengan nomor telepon saja** di bagian bawah.\n4. Masukkan kode di atas.`);
+            } catch (e) {
+                bot.sendMessage(chatId, "❌ Error saat minta kode: " + e.message);
+            }
+        }, 3000);
     }
-});
 
-client.on('ready', () => {
-    console.log('✅ WhatsApp Ready & Terhubung!');
-    if (targetChatId) bot.sendMessage(targetChatId, "✅ **WHATSAPP READY!**\nChrome sudah terbuka & login.");
-});
+    sock.ev.on('creds.update', saveCreds);
 
-client.on('disconnected', (reason) => {
-    console.log('❌ WhatsApp Terputus:', reason);
-    isProcessing = false;
-});
+    sock.ev.on('connection.update', (update) => {
+        const { connection, lastDisconnect } = update;
+        if (connection === 'open') {
+            bot.sendMessage(chatId, "✅ **LOGIN BERHASIL!** WA kamu sudah tertaut.");
+        }
+        if (connection === 'close') {
+            const shouldReconnect = lastDisconnect.error?.output?.statusCode !== 401;
+            if (shouldReconnect) startWA(chatId, phoneNumber);
+        }
+    });
+}
 
-// --- KONTROL TELEGRAM ---
-bot.onText(/\/qr/, async (msg) => {
-    targetChatId = msg.chat.id;
-    bot.sendMessage(targetChatId, "⏳ Membuka Chrome... Harap tunggu jendela Chrome muncul.");
-    try {
-        await client.initialize();
-    } catch (e) {
-        bot.sendMessage(targetChatId, "❌ Gagal Inisialisasi: " + e.message);
-    }
+// --- COMMANDS TELEGRAM ---
+
+bot.onText(/\/login (.+)/, (msg, match) => {
+    const phoneNumber = match[1].replace(/[^0-9]/g, '');
+    bot.sendMessage(msg.chat.id, "⏳ Menghubungkan ke server WA...");
+    startWA(msg.chat.id, phoneNumber);
 });
 
 bot.onText(/\/filter/, async (msg) => {
-    if (isProcessing) return bot.sendMessage(msg.chat.id, "⚠️ Ada proses lain.");
-    try {
-        const rawData = fs.readFileSync(FILE_NOMOR, 'utf-8').split('\n').filter(l => l.trim() !== '');
-        isProcessing = true;
-        let valid = [];
-        bot.sendMessage(msg.chat.id, `🔍 Memulai Filter ${rawData.length} nomor...`);
+    if (!sock) return bot.sendMessage(msg.chat.id, "⚠️ Login dulu dengan `/login nomor`.");
+    
+    const rawData = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.length > 5);
+    isProcessing = true;
+    let valid = [];
+    
+    bot.sendMessage(msg.chat.id, `🔍 Memproses ${rawData.length} nomor...`);
 
-        for (let line of rawData) {
-            if (!isProcessing) break;
-            let num = line.split(/\s+/).pop().replace(/[^0-9]/g, '');
-            if (!num.startsWith('62')) num = '62' + num.replace(/^0/, '');
-            
-            try {
-                const isRegistered = await client.isRegisteredUser(num + "@c.us");
-                if (isRegistered) valid.push({ nama: line.split(/\s+/)[0], nomor: num });
-            } catch (e) { console.log("Skip nomor error"); }
-            await new Promise(r => setTimeout(r, 500));
-        }
-        fs.writeFileSync(FILE_TEMP_FILTER, JSON.stringify(valid, null, 2));
-        isProcessing = false;
-        bot.sendMessage(msg.chat.id, `✅ Selesai! Valid: ${valid.length}`);
-    } catch (err) {
-        isProcessing = false;
-        bot.sendMessage(msg.chat.id, "❌ Error Filter: " + err.message);
+    for (let line of rawData) {
+        if (!isProcessing) break;
+        let num = line.split(/\s+/).pop().replace(/[^0-9]/g, '');
+        if (!num.startsWith('62')) num = '62' + num.replace(/^0/, '');
+
+        try {
+            const [result] = await sock.onWhatsApp(num);
+            if (result?.exists) valid.push({ nama: line.split(/\s+/)[0], nomor: num });
+        } catch (e) {}
+        await delay(1000);
     }
+
+    fs.writeFileSync('database_valid.json', JSON.stringify(valid));
+    isProcessing = false;
+    bot.sendMessage(msg.chat.id, `✅ Selesai! Valid: ${valid.length}. Ketik /jalankan`);
 });
 
 bot.onText(/\/jalankan/, async (msg) => {
-    if (isProcessing) return;
-    try {
-        let antrean = JSON.parse(fs.readFileSync(FILE_TEMP_FILTER, 'utf-8') || '[]');
-        isProcessing = true;
-        bot.sendMessage(msg.chat.id, "🚀 Blast dimulai...");
+    const antrean = JSON.parse(fs.readFileSync('database_valid.json', 'utf-8') || '[]');
+    isProcessing = true;
+    bot.sendMessage(msg.chat.id, "🚀 Memulai Blast...");
 
-        for (let item of antrean) {
-            if (!isProcessing) break;
-            try {
-                const pesan = fs.readFileSync(FILE_PESAN, 'utf-8').replace(/{id}/g, item.nama);
-                await client.sendMessage(item.nomor + "@c.us", pesan);
-            } catch (e) { console.log("Gagal kirim ke " + item.nomor); }
-            await new Promise(r => setTimeout(r, 1000));
-        }
-        isProcessing = false;
-        bot.sendMessage(msg.chat.id, "🏁 Blast Selesai!");
-    } catch (err) {
-        isProcessing = false;
-        bot.sendMessage(msg.chat.id, "❌ Error Blast: " + err.message);
+    for (let item of antrean) {
+        if (!isProcessing) break;
+        try {
+            const template = fs.readFileSync('./script.txt', 'utf-8');
+            const pesan = template.replace(/{id}/g, item.nama);
+            await sock.sendMessage(item.nomor + "@s.whatsapp.net", { text: pesan });
+        } catch (e) {}
+        await delay(1000);
     }
-});
-
-bot.onText(/\/stop/, (msg) => {
     isProcessing = false;
-    bot.sendMessage(msg.chat.id, "🛑 Berhenti.");
+    bot.sendMessage(msg.chat.id, "🏁 Blast Selesai!");
 });
 
-console.log("🤖 BOT WSO288 AKTIF - Gunakan /qr untuk memulai");
+bot.onText(/\/stop/, (msg) => { isProcessing = false; bot.sendMessage(msg.chat.id, "🛑 Berhenti."); });
+
+console.log("🤖 Bot Berjalan. Ketik /login [nomor] di Telegram.");
