@@ -1,14 +1,14 @@
 {
-  "name": "wa-bot",
+  "name": "wa-blast-wso",
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "^6.6.0",
-    "node-telegram-bot-api": "^0.66.0",
-    "qrcode": "^1.5.3",
-    "pino": "^8.19.0"
+    "@whiskeysockets/baileys": "latest",
+    "node-telegram-bot-api": "latest",
+    "qrcode": "latest",
+    "pino": "latest"
   }
 }
