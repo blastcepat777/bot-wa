@@ -10,15 +10,15 @@ const bot = new TelegramBot(token, {polling: true});
 const FILE_NOMOR = 'nomor.txt';
 const FILE_PESAN = './script.txt';
 const FILE_TEMP_FILTER = 'database_valid.json'; 
-const JEDA_FILTER = 1000; // TURBO 1 DETIK
-const JEDA_BLAST_MIN = 0; // TURBO MAX 0 DETIK
-const JEDA_BLAST_MAX = 1000; // MAX 1 DETIK
+const JEDA_FILTER = 1000; 
+const JEDA_BLAST_MIN = 0; 
+const JEDA_BLAST_MAX = 1000; 
 
 let sock;
 let isProcessing = false;
 let isLogged = false; 
 let lastQrMsgId = null; 
-let showQR = false; // Flag untuk kontrol penampilan QR
+let showQR = false; 
 
 // --- DATABASE SISTEM ---
 function simpanProgress(data) { fs.writeFileSync(FILE_TEMP_FILTER, JSON.stringify(data, null, 2)); }
@@ -45,8 +45,8 @@ function ambilDaftarNomor() {
         }).filter(item => item !== null && item.nomor.length >= 10);
 }
 
-// --- KONEKSI ANTI-SPAM ---
-async function startWA(chatId) {
+// --- KONEKSI ---
+async function startWA(chatId = null) {
     const { state, saveCreds } = await useMultiFileAuthState('session_data');
     const { version } = await fetchLatestBaileysVersion();
     
@@ -62,41 +62,39 @@ async function startWA(chatId) {
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
 
-        // Hanya kirim QR jika user baru saja mengetik /qr
-        if (qr && showQR) {
+        // Kirim QR hanya jika flag showQR aktif (dari perintah /qr)
+        if (qr && showQR && chatId) {
             const buffer = await QRCode.toBuffer(qr, { scale: 15, margin: 2 });
             if (lastQrMsgId) {
                 bot.deleteMessage(chatId, lastQrMsgId).catch(() => {});
             }
-            const sentPhoto = await bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR WHATSAPP**\nSegera scan sebelum expired." });
+            const sentPhoto = await bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR WHATSAPP**" });
             lastQrMsgId = sentPhoto.message_id;
-            showQR = false; // Reset flag setelah terkirim
+            showQR = false; 
         }
 
         if (connection === 'open') {
-            lastQrMsgId = null;
-            if (!isLogged) {
-                isLogged = true;
-                bot.sendMessage(chatId, `✅ **WA TERHUBUNG**\n\nKetik \`/filter\` untuk pancing history.`);
-            }
+            isLogged = true;
+            if (chatId) bot.sendMessage(chatId, `✅ **WA TERHUBUNG**\nKetik \`/filter\`.`);
         }
 
         if (connection === 'close') {
             const code = lastDisconnect.error?.output?.statusCode;
+            isLogged = false;
             if (code === DisconnectReason.loggedOut) {
-                isLogged = false;
-                bot.sendMessage(chatId, "⚠️ Sesi terputus. Silakan `/qr` ulang.");
+                if (chatId) bot.sendMessage(chatId, "⚠️ Sesi Logout. Ketik `/qr` ulang.");
             } else {
-                startWA(chatId); 
+                startWA(chatId); // Reconnect otomatis
             }
         }
     });
+
     sock.ev.on('creds.update', saveCreds);
 }
 
 // --- TURBO VALIDATOR (1s) ---
 async function prosesFilter(chatId) {
-    if (!sock) return bot.sendMessage(chatId, "⚠️ Gunakan `/qr` dulu.");
+    if (!sock || !isLogged) return bot.sendMessage(chatId, "⚠️ Belum terhubung. Ketik `/qr` dulu.");
     if (isProcessing) return;
     
     let daftar = ambilDaftarNomor();
@@ -104,7 +102,7 @@ async function prosesFilter(chatId) {
 
     isProcessing = true;
     let nomorValid = [];
-    let statusMsg = await bot.sendMessage(chatId, `🔍 **TURBO FILTER RUNNING (1s)...**`);
+    let statusMsg = await bot.sendMessage(chatId, `🔍 **TURBO FILTER RUNNING...**`);
 
     for (let i = 0; i < daftar.length; i++) {
         if (!isProcessing) break;
@@ -120,8 +118,8 @@ async function prosesFilter(chatId) {
             }
         } catch (e) {}
 
-        const persen = Math.round(((i + 1) / daftar.length) * 100);
         if (i % 5 === 0 || i === daftar.length - 1) {
+            const persen = Math.round(((i + 1) / daftar.length) * 100);
             try {
                 await bot.editMessageText(
                     `🔍 **PROGRESS VALIDATOR:**\n${buatBar(persen)} ${persen}%\n✅ **Valid:** ${nomorValid.length}`,
@@ -133,12 +131,12 @@ async function prosesFilter(chatId) {
     }
 
     isProcessing = false;
-    bot.sendMessage(chatId, `✅ **FILTER SELESAI.**\nTotal: ${nomorValid.length}\nKetik \`/jalankan\` untuk mulai blast.`);
+    bot.sendMessage(chatId, `✅ **FILTER SELESAI.**`);
 }
 
-// --- BLAST SISTEM (TEKS SAJA) ---
+// --- BLAST SISTEM ---
 async function prosesJalankan(chatId) {
-    if (!sock || isProcessing) return;
+    if (!sock || !isLogged || isProcessing) return;
     let antrean = muatProgress();
     if (antrean.length === 0) return bot.sendMessage(chatId, "❌ Filter dulu.");
 
@@ -153,16 +151,14 @@ async function prosesJalankan(chatId) {
 
         try {
             const pesanTxt = fs.readFileSync(FILE_PESAN, 'utf-8').replace(/{id}/g, target.nama);
-            
-            // Mengirim teks saja tanpa gambar
             await sock.sendMessage(jid, { text: pesanTxt });
             sukses++;
         } catch (err) {}
 
-        const persen = Math.round(((i + 1) / antrean.length) * 100);
         if (i % 5 === 0 || i === antrean.length - 1) {
+            const persen = Math.round(((i + 1) / antrean.length) * 100);
             try {
-                await bot.editMessageText(`🚀 **PROGRESS BLAST:**\n${buatBar(persen)} ${persen}%\n✅ Terkirim: ${sukses}/${antrean.length}`, { chat_id: chatId, message_id: statusMsg.message_id, parse_mode: 'Markdown' });
+                await bot.editMessageText(`🚀 **PROGRESS BLAST:**\n${buatBar(persen)} ${persen}%\n✅ Terkirim: ${sukses}`, { chat_id: chatId, message_id: statusMsg.message_id, parse_mode: 'Markdown' });
             } catch (e) {}
         }
 
@@ -171,15 +167,11 @@ async function prosesJalankan(chatId) {
     }
 
     isProcessing = false;
-    bot.sendMessage(chatId, `🏁 **MISI SELESAI!**`);
+    bot.sendMessage(chatId, `🏁 **SELESAI.**`);
 }
+
+// --- AUTO START ---
+startWA(); // Menjalankan di background saat script dinyalakan
 
 // --- COMMANDS ---
 bot.onText(/\/qr/, (msg) => {
-    showQR = true; // Aktifkan flag QR saat diperintah
-    startWA(msg.chat.id);
-});
-bot.onText(/\/filter/, (msg) => prosesFilter(msg.chat.id));
-bot.onText(/\/jalankan/, (msg) => prosesJalankan(msg.chat.id));
-bot.onText(/\/stop/, (msg) => { isProcessing = false; bot.sendMessage(msg.chat.id, "🛑 Berhenti."); });
-bot.onText(/\/restart
