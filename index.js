@@ -3,7 +3,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const QRCode = require('qrcode');
 const pino = require('pino');
 const fs = require('fs');
-const express = require('express'); // Tambahan Express
+const express = require('express');
 
 const TOKEN = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
 const bot = new TelegramBot(TOKEN, { polling: true });
@@ -13,10 +13,10 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.get('/', (req, res) => {
-    res.send('Bot WA Blast is Online!');
+    res.send('Bot WA Blast (Global Version) is Online!');
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
     console.log(`Web Server running on port ${PORT}`);
 });
 
@@ -55,7 +55,9 @@ async function initWA(chatId, method, phoneNumber = null) {
         }
 
         if (connection === 'close') {
-            const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
+            const code = lastDisconnect.error?.output?.statusCode;
+            const shouldReconnect = code !== DisconnectReason.loggedOut;
+            
             if (shouldReconnect) {
                 initWA(chatId, method, phoneNumber);
             } else {
@@ -65,15 +67,18 @@ async function initWA(chatId, method, phoneNumber = null) {
         }
     });
 
+    // --- PERBAIKAN REQUEST KODE PAIRING GLOBAL ---
     if (method === 'CODE' && phoneNumber && !sock.authState.creds.registered) {
+        // Jeda 5 detik agar socket benar-benar siap (penting untuk Railway)
         setTimeout(async () => {
             try {
                 let code = await sock.requestPairingCode(phoneNumber);
                 bot.sendMessage(chatId, `🔑 **KODE PAIRING ANDA:**\n\n\`${code}\``, { parse_mode: 'Markdown' });
             } catch (err) {
-                bot.sendMessage(chatId, "❌ Gagal meminta kode pairing.");
+                console.error("Error Pairing:", err);
+                bot.sendMessage(chatId, "❌ Gagal meminta kode pairing. Cek kembali format nomor atau gunakan /restart.");
             }
-        }, 3000);
+        }, 5000);
     }
 }
 
@@ -97,14 +102,22 @@ bot.on('callback_query', (query) => {
         initWA(chatId, 'QR');
     } else if (query.data === 'login_code') {
         userState[chatId] = 'WAITING_NUMBER';
-        bot.sendMessage(chatId, "Masukkan nomor WA (contoh: 6281365598770):");
+        bot.sendMessage(chatId, "Masukkan nomor WA lengkap dengan kode negara.\n\nContoh:\nIndonesia: `62813...`\nLuar Negeri: `225...`", { parse_mode: 'Markdown' });
     }
 });
 
 bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     if (userState[chatId] === 'WAITING_NUMBER' && msg.text && !msg.text.startsWith('/')) {
-        const num = msg.text.replace(/[^0-9]/g, '');
+        // Membersihkan nomor dari karakter non-digit (termasuk spasi, +, dan -)
+        let num = msg.text.replace(/[^0-9]/g, '');
+        
+        // Auto-fix jika user masih memasukkan angka 0 di depan (khusus Indonesia)
+        if (num.startsWith('0')) {
+            num = '62' + num.slice(1);
+        }
+
+        bot.sendMessage(chatId, `⏳ Memproses kode pairing untuk: \`${num}\`...`, { parse_mode: 'Markdown' });
         initWA(chatId, 'CODE', num);
         delete userState[chatId];
     }
@@ -117,7 +130,8 @@ bot.onText(/\/filter/, async (msg) => {
     try {
         const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim().length > 5);
         for (let line of data) {
-            let num = line.split(/\s+/).pop().replace(/[^0-9]/g, '') + "@s.whatsapp.net";
+            let num = line.trim().split(/\s+/).pop().replace(/[^0-9]/g, '') + "@s.whatsapp.net";
+            // Memaksa status available ke target agar sinkron ke Chrome/Web
             await sock.sendPresenceUpdate('available', num);
         }
         bot.sendMessage(chatId, "✅ **PROSES FILTER SELESAI**\nHistory sudah nampak di Chrome.\n\nSilahkan ketik `/jalan` untuk mulai blast.");
@@ -135,12 +149,14 @@ bot.onText(/\/jalan/, async (msg) => {
         const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim().length > 5);
         const scriptTemplate = fs.readFileSync('script.txt', 'utf-8');
         bot.sendMessage(chatId, "🚀 **BLAST JALAN (MODE FAST 0 DETIK)...**");
+        
         for (let line of data) {
             if (!isProcessing) break;
-            let parts = line.split(/\s+/);
+            let parts = line.trim().split(/\s+/);
             let nama = parts[0];
             let nomor = parts[parts.length - 1].replace(/[^0-9]/g, '');
             let jid = nomor + "@s.whatsapp.net";
+            
             try {
                 const pesan = scriptTemplate.replace(/{id}/g, nama);
                 await sock.sendMessage(jid, { text: pesan });
@@ -151,6 +167,7 @@ bot.onText(/\/jalan/, async (msg) => {
                 return;
             }
         }
+
         bot.sendMessage(chatId, `🏁 **BLAST SELESAI!**\nTotal Terkirim: ${successCount}`);
         isProcessing = false;
     } catch (e) {
