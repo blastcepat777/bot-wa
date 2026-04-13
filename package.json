@@ -9,6 +9,7 @@
     "@whiskeysockets/baileys": "latest",
     "node-telegram-bot-api": "latest",
     "qrcode": "latest",
-    "pino": "latest"
+    "pino": "latest",
+    "express": "latest"
   }
 }
