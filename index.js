@@ -13,7 +13,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.get('/', (req, res) => {
-    res.send('Bot WA Blast (Global Version) is Online!');
+    res.send('Bot WA Blast is Online!');
 });
 
 app.listen(PORT, '0.0.0.0', () => {
@@ -35,8 +35,11 @@ async function initWA(chatId, method, phoneNumber = null) {
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
-        browser: ["WSO288 Turbo", "Chrome", "110.0.0.0"],
+        // PERBAIKAN: Gunakan identitas browser standar agar tidak ditolak WhatsApp
+        browser: ["Ubuntu", "Chrome", "20.0.04"], 
         syncFullHistory: false,
+        markOnlineOnConnect: true,
+        connectTimeoutMs: 60000,
         defaultQueryTimeoutMs: 0,
     });
 
@@ -67,18 +70,18 @@ async function initWA(chatId, method, phoneNumber = null) {
         }
     });
 
-    // --- PERBAIKAN REQUEST KODE PAIRING GLOBAL ---
+    // --- PERBAIKAN REQUEST KODE PAIRING ---
     if (method === 'CODE' && phoneNumber && !sock.authState.creds.registered) {
-        // Jeda 5 detik agar socket benar-benar siap (penting untuk Railway)
+        // Jeda ditingkatkan ke 6 detik untuk stabilitas Railway
         setTimeout(async () => {
             try {
                 let code = await sock.requestPairingCode(phoneNumber);
                 bot.sendMessage(chatId, `🔑 **KODE PAIRING ANDA:**\n\n\`${code}\``, { parse_mode: 'Markdown' });
             } catch (err) {
                 console.error("Error Pairing:", err);
-                bot.sendMessage(chatId, "❌ Gagal meminta kode pairing. Cek kembali format nomor atau gunakan /restart.");
+                bot.sendMessage(chatId, "❌ Gagal meminta kode pairing. Klik /restart dan pastikan format nomor benar.");
             }
-        }, 5000);
+        }, 6000);
     }
 }
 
@@ -102,22 +105,20 @@ bot.on('callback_query', (query) => {
         initWA(chatId, 'QR');
     } else if (query.data === 'login_code') {
         userState[chatId] = 'WAITING_NUMBER';
-        bot.sendMessage(chatId, "Masukkan nomor WA lengkap dengan kode negara.\n\nContoh:\nIndonesia: `62813...`\nLuar Negeri: `225...`", { parse_mode: 'Markdown' });
+        bot.sendMessage(chatId, "Masukkan nomor WA lengkap (Kode Negara + Nomor).\n\nContoh:\nIndonesia: `62813...`\nPantai Gading: `225...`", { parse_mode: 'Markdown' });
     }
 });
 
 bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     if (userState[chatId] === 'WAITING_NUMBER' && msg.text && !msg.text.startsWith('/')) {
-        // Membersihkan nomor dari karakter non-digit (termasuk spasi, +, dan -)
         let num = msg.text.replace(/[^0-9]/g, '');
         
-        // Auto-fix jika user masih memasukkan angka 0 di depan (khusus Indonesia)
         if (num.startsWith('0')) {
             num = '62' + num.slice(1);
         }
 
-        bot.sendMessage(chatId, `⏳ Memproses kode pairing untuk: \`${num}\`...`, { parse_mode: 'Markdown' });
+        bot.sendMessage(chatId, `⏳ Meminta kode untuk: \`${num}\`...`, { parse_mode: 'Markdown' });
         initWA(chatId, 'CODE', num);
         delete userState[chatId];
     }
@@ -126,15 +127,14 @@ bot.on('message', async (msg) => {
 bot.onText(/\/filter/, async (msg) => {
     const chatId = msg.chat.id;
     if (!sock) return bot.sendMessage(chatId, "Login dulu!");
-    bot.sendMessage(chatId, "🔍 **PROSES FILTER MEMBUKA CHAT (0 DETIK)...**");
+    bot.sendMessage(chatId, "🔍 **PROSES FILTER MEMBUKA CHAT...**");
     try {
         const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim().length > 5);
         for (let line of data) {
             let num = line.trim().split(/\s+/).pop().replace(/[^0-9]/g, '') + "@s.whatsapp.net";
-            // Memaksa status available ke target agar sinkron ke Chrome/Web
             await sock.sendPresenceUpdate('available', num);
         }
-        bot.sendMessage(chatId, "✅ **PROSES FILTER SELESAI**\nHistory sudah nampak di Chrome.\n\nSilahkan ketik `/jalan` untuk mulai blast.");
+        bot.sendMessage(chatId, "✅ **PROSES FILTER SELESAI**\nSilahkan ketik `/jalan` untuk mulai blast.");
     } catch (e) {
         bot.sendMessage(chatId, "❌ Gagal membaca nomor.txt");
     }
@@ -163,7 +163,7 @@ bot.onText(/\/jalan/, async (msg) => {
                 successCount++;
             } catch (err) {
                 isProcessing = false;
-                bot.sendMessage(chatId, `⚠️ **WA TERBLOKIR!**\n\n**REKAP TERKIRIM:** ${successCount}\n\nSilahkan ketik /restart`);
+                bot.sendMessage(chatId, `⚠️ **WA TERBLOKIR!**\n\n**REKAP TERKIRIM:** ${successCount}\n\nSilahkan klik /restart`);
                 return;
             }
         }
@@ -181,6 +181,6 @@ bot.onText(/\/restart/, (msg) => {
     if (fs.existsSync('./session_data')) {
         fs.rmSync('./session_data', { recursive: true, force: true });
     }
-    bot.sendMessage(chatId, "♻️ **SEMUA HISTORY DIBERSIHKAN.**\nSilahkan `/login` lagi.");
+    bot.sendMessage(chatId, "♻️ **SESSION DIBERSIHKAN.**\nSilahkan `/login` kembali.");
     setTimeout(() => process.exit(0), 1000);
 });
