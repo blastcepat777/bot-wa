@@ -1,61 +1,80 @@
-const { Client } = require('whatsapp-web.js');
+const { Client, LocalAuth } = require('whatsapp-web.js');
 const TelegramBot = require('node-telegram-bot-api');
-const axios = require('axios');
+const qrcode = require('qrcode');
 const fs = require('fs');
 
 const TOKEN = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
 const bot = new TelegramBot(TOKEN, {polling: true});
 
-async function startBatch1() {
-    try {
-        // Mengambil alamat jembatan dari Chrome yang sedang terbuka
-        const res = await axios.get('http://127.0.0.1:9222/json/version');
-        const wsUrl = res.data.webSocketDebuggerUrl;
+let client;
+let isProcessing = false;
+let successCount = 0;
+let userState = {};
 
-        const client = new Client({
-            puppeteer: {
-                browserWSEndpoint: wsUrl, // Menempel ke Chrome kamu
-            }
-        });
+// Inisialisasi Client WA
+function initClient(chatId) {
+    client = new Client({
+        authStrategy: new LocalAuth({ dataPath: './sessions' }),
+        puppeteer: {
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-extensions']
+        }
+    });
 
-        console.log("✅ Berhasil menempel ke Chrome! Tunggu sampai 'Ready'...");
+    client.on('qr', (qr) => {
+        if (userState[chatId] === 'WAITING_QR') {
+            qrcode.toBuffer(qr, (err, buffer) => {
+                bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR INI SEGERA**" });
+            });
+        }
+    });
 
-        client.on('ready', () => {
-            console.log('✅ WhatsApp Ready! Silakan gunakan Telegram.');
-        });
+    client.on('ready', () => {
+        bot.sendMessage(chatId, "✅ **WA SUDAH TERHUBUNG**, silahkan `/filter` untuk membuka history chat");
+    });
 
-        bot.onText(/\/start/, (msg) => {
-            bot.sendMessage(msg.chat.id, "🎯 **WSO288 BATCH 1 ACTIVE**\nStatus: Terhubung ke Chrome\n\nKetik `/blast` untuk mulai kirim.");
-        });
+    client.on('disconnected', (reason) => {
+        isProcessing = false;
+        bot.sendMessage(chatId, `❌ **WA TERBLOKIR / TERPUTUS**\n\n**REKAP TERKIRIM:** ${successCount}\nSilahkan klik `/restart` untuk membersihkan sesi.`);
+    });
 
-        bot.onText(/\/blast/, async (msg) => {
-            const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim());
-            const template = fs.readFileSync('script.txt', 'utf-8');
-
-            bot.sendMessage(msg.chat.id, `🚀 Memulai BATCH 1 ke ${data.length} nomor...`);
-
-            for (let line of data) {
-                let [nama, nomor] = line.split(/\s+/);
-                let target = nomor.replace(/[^0-9]/g, '');
-                if (target.startsWith('0')) target = '62' + target.slice(1);
-
-                try {
-                    const pesanFinal = template.replace(/{id}/g, nama);
-                    await client.sendMessage(target + "@c.us", pesanFinal);
-                    console.log(`✅ Terkirim: ${nama}`);
-                } catch (e) {
-                    console.log(`❌ Gagal ke: ${target}`);
-                }
-                // Jeda 2 detik agar aman
-                await new Promise(r => setTimeout(r, 2000));
-            }
-            bot.sendMessage(msg.chat.id, "🏁 **BATCH 1 SELESAI!**");
-        });
-
-        client.initialize();
-    } catch (e) {
-        console.log("❌ Gagal connect. Pastikan Chrome localhost:9222 masih terbuka!");
-    }
+    client.initialize().catch(err => console.error("Init Error:", err));
 }
 
-startBatch1();
+// --- LOGIKA COMMAND TELEGRAM ---
+
+bot.onText(/\/login/, (msg) => {
+    const chatId = msg.chat.id;
+    const opts = {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: "QR", callback_data: 'qr_mode' }, { text: "Kode", callback_data: 'pair_mode' }]
+            ]
+        }
+    };
+    bot.sendMessage(chatId, "Mau login pakai apa?", opts);
+});
+
+bot.on('callback_query', (query) => {
+    const chatId = query.message.chat.id;
+    if (query.data === 'qr_mode') {
+        userState[chatId] = 'WAITING_QR';
+        bot.sendMessage(chatId, "⏳ Menyiapkan Barcode...");
+        initClient(chatId);
+    } else if (query.data === 'pair_mode') {
+        userState[chatId] = 'WAITING_NUMBER';
+        bot.sendMessage(chatId, "Masukkan nomor WhatsApp (contoh: 6281365598770):");
+    }
+});
+
+bot.on('message', async (msg) => {
+    const chatId = msg.chat.id;
+    const text = msg.text;
+
+    if (userState[chatId] === 'WAITING_NUMBER' && !text.startsWith('/')) {
+        bot.sendMessage(chatId, "⏳ Meminta kode pairing...");
+        initClient(chatId);
+        
+        // Tunggu internal client siap sebentar
+        setTimeout(async () => {
+            try {
+                const pairingCode = await client.requestPairingCode(text.replace(/[^
