@@ -14,12 +14,16 @@ const PORT = process.env.PORT || 3000;
 app.get('/', (req, res) => res.send('Bot WA Blast Super Fast is Online!'));
 app.listen(PORT, '0.0.0.0', () => console.log(`Web Server running on port ${PORT}`));
 
+// --- FUNGSI DELAY ---
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 // --------------------------------------------------------
 
 let sock;
 let isProcessing = false;
 let successCount = 0;
 let userState = {};
+let qrSent = false; // Flag agar QR hanya kirim sekali
 
 async function initWA(chatId, method, phoneNumber = null) {
     const { state, saveCreds } = await useMultiFileAuthState('session_data');
@@ -41,22 +45,25 @@ async function initWA(chatId, method, phoneNumber = null) {
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
         
-        if (qr && method === 'QR') {
+        // Perbaikan: QR dikirim hanya jika qrSent masih false
+        if (qr && method === 'QR' && !qrSent) {
+            qrSent = true; 
             const buffer = await QRCode.toBuffer(qr, { scale: 10 });
-            bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR INI**" });
+            bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR INI**\nBarcode hanya dikirim sekali. Jika gagal, gunakan /restart" });
         }
         
         if (connection === 'open') {
+            qrSent = false;
             bot.sendMessage(chatId, "✅ **WA TERHUBUNG**, silahkan `/filter` untuk membuka history");
         }
         
         if (connection === 'close') {
             const code = lastDisconnect.error?.output?.statusCode;
-            // Jika bukan logout manual, bot akan otomatis reconnect
             if (code !== DisconnectReason.loggedOut) {
                 initWA(chatId, method, phoneNumber);
             } else {
                 isProcessing = false;
+                qrSent = false;
                 bot.sendMessage(chatId, `❌ **WA LOGOUT.** Gunakan /login kembali.`);
             }
         }
@@ -77,6 +84,7 @@ async function initWA(chatId, method, phoneNumber = null) {
 // --- TELEGRAM COMMANDS ---
 
 bot.onText(/\/login/, (msg) => {
+    qrSent = false; // Reset flag saat user ingin login ulang
     const opts = { reply_markup: { inline_keyboard: [[{ text: "QR", callback_data: 'login_qr' }, { text: "Kode", callback_data: 'login_code' }]] } };
     bot.sendMessage(msg.chat.id, "Pilih metode login:", opts);
 });
@@ -115,7 +123,7 @@ bot.onText(/\/filter/, async (msg) => {
     } catch (e) { bot.sendMessage(chatId, "❌ Gagal membaca nomor.txt"); }
 });
 
-// --- LOGIKA BLAST MODE FAST (0 DETIK) ---
+// --- LOGIKA BLAST DENGAN JEDA PER 50 CHAT ---
 bot.onText(/\/jalan/, async (msg) => {
     const chatId = msg.chat.id;
     if (isProcessing) return;
@@ -127,10 +135,17 @@ bot.onText(/\/jalan/, async (msg) => {
         const script1 = fs.readFileSync('script1.txt', 'utf-8');
         const script2 = fs.readFileSync('script2.txt', 'utf-8');
         
-        bot.sendMessage(chatId, "🚀 **MODE SUPER FAST JALAN (0 DETIK)...**");
+        bot.sendMessage(chatId, "🚀 **MODE FAST JALAN (0 Detik + Jeda tiap 50)...**");
         
         for (let i = 0; i < data.length; i++) {
             if (!isProcessing) break;
+
+            // --- LOGIKA JEDA SETIAP 50 CHAT ---
+            if (i > 0 && i % 50 === 0) {
+                bot.sendMessage(chatId, `☕ **ISTIRAHAT SEBENTAR...**\nBerhasil mengirim ${successCount} pesan. Menunggu 45 detik agar tidak terblokir.`);
+                await delay(45000); // Jeda 45 detik
+                bot.sendMessage(chatId, "▶️ **MELANJUTKAN BLAST...**");
+            }
 
             let line = data[i];
             let parts = line.trim().split(/\s+/);
@@ -142,10 +157,9 @@ bot.onText(/\/jalan/, async (msg) => {
 
             try {
                 const pesan = selectedTemplate.replace(/{id}/g, nama);
-                // Kirim pesan langsung tanpa jeda (0 Detik)
                 await sock.sendMessage(jid, { text: pesan });
                 successCount++;
-                console.log(`[${successCount}] Super Fast -> ${nomor}`);
+                console.log(`[${successCount}] Sent -> ${nomor}`);
             } catch (err) {
                 isProcessing = false;
                 bot.sendMessage(chatId, `⚠️ **AKUN TERBATASI!** Terhenti di nomor ke-${successCount + 1}`);
@@ -155,31 +169,29 @@ bot.onText(/\/jalan/, async (msg) => {
         bot.sendMessage(chatId, `🏁 **SELESAI!** Total: ${successCount} pesan terkirim.`);
         isProcessing = false;
     } catch (e) { 
-        bot.sendMessage(chatId, "❌ File script1.txt/script2.txt bermasalah."); 
+        bot.sendMessage(chatId, "❌ File script atau nomor bermasalah."); 
         isProcessing = false; 
     }
 });
 
-// --- RESTART PERBAIKAN: TETAP ONLINE DI RAILWAY ---
+// --- RESTART ---
 bot.onText(/\/restart/, async (msg) => {
     const chatId = msg.chat.id;
     isProcessing = false;
+    qrSent = false;
     
     bot.sendMessage(chatId, "♻️ **MEMBERSIHKAN SESI...**");
 
     if (sock) {
-        sock.logout(); // Memutus koneksi
-        sock.end();    // Mengakhiri socket
+        try { await sock.logout(); } catch (e) {}
+        sock.end();
     }
 
-    // Tunggu sebentar lalu hapus folder
     setTimeout(() => {
         if (fs.existsSync('./session_data')) {
             fs.rmSync('./session_data', { recursive: true, force: true });
         }
-        bot.sendMessage(chatId, "✅ **SESI BERSIH.** Silahkan `/login` kembali.\n\n*(Proses Railway tetap online)*");
-        
-        // Inisialisasi ulang tanpa mematikan proses node
+        bot.sendMessage(chatId, "✅ **SESI BERSIH.** Silahkan `/login` kembali.");
         sock = null; 
     }, 2000);
 });
