@@ -1,13 +1,14 @@
 {
-  "name": "wa-telegram-bot",
+  "name": "wa-bot",
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "whatsapp-web.js": "latest",
-    "node-telegram-bot-api": "latest",
-    "qrcode": "latest"
+    "@whiskeysockets/baileys": "^6.6.0",
+    "node-telegram-bot-api": "^0.66.0",
+    "qrcode": "^1.5.3",
+    "pino": "^8.19.0"
   }
 }
