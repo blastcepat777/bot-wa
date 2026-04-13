@@ -3,16 +3,29 @@ const TelegramBot = require('node-telegram-bot-api');
 const QRCode = require('qrcode');
 const pino = require('pino');
 const fs = require('fs');
+const express = require('express'); // Tambahan Express
 
 const TOKEN = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
 const bot = new TelegramBot(TOKEN, { polling: true });
+
+// --- KONFIGURASI WEB SERVER AGAR RAILWAY TETAP ONLINE ---
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get('/', (req, res) => {
+    res.send('Bot WA Blast is Online!');
+});
+
+app.listen(PORT, () => {
+    console.log(`Web Server running on port ${PORT}`);
+});
+
+// --------------------------------------------------------
 
 let sock;
 let isProcessing = false;
 let successCount = 0;
 let userState = {};
-
-// --- FUNGSI UTAMA WHATSAPP ---
 
 async function initWA(chatId, method, phoneNumber = null) {
     const { state, saveCreds } = await useMultiFileAuthState('session_data');
@@ -24,7 +37,7 @@ async function initWA(chatId, method, phoneNumber = null) {
         logger: pino({ level: 'silent' }),
         browser: ["WSO288 Turbo", "Chrome", "110.0.0.0"],
         syncFullHistory: false,
-        defaultQueryTimeoutMs: 0, // Fast response
+        defaultQueryTimeoutMs: 0,
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -32,7 +45,6 @@ async function initWA(chatId, method, phoneNumber = null) {
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
 
-        // STEP 1: LOGIN HANDLER
         if (qr && method === 'QR') {
             const buffer = await QRCode.toBuffer(qr, { scale: 10 });
             bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR INI**" });
@@ -53,7 +65,6 @@ async function initWA(chatId, method, phoneNumber = null) {
         }
     });
 
-    // Handle Pairing Code
     if (method === 'CODE' && phoneNumber && !sock.authState.creds.registered) {
         setTimeout(async () => {
             try {
@@ -99,53 +110,39 @@ bot.on('message', async (msg) => {
     }
 });
 
-// STEP 2: FILTER (0 DETIK)
 bot.onText(/\/filter/, async (msg) => {
     const chatId = msg.chat.id;
     if (!sock) return bot.sendMessage(chatId, "Login dulu!");
-
     bot.sendMessage(chatId, "🔍 **PROSES FILTER MEMBUKA CHAT (0 DETIK)...**");
-    
     try {
         const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim().length > 5);
-        
-        // Membuka history secara instan
         for (let line of data) {
             let num = line.split(/\s+/).pop().replace(/[^0-9]/g, '') + "@s.whatsapp.net";
-            await sock.sendPresenceUpdate('available', num); // Memicu history agar nampak di Chrome
+            await sock.sendPresenceUpdate('available', num);
         }
-        
         bot.sendMessage(chatId, "✅ **PROSES FILTER SELESAI**\nHistory sudah nampak di Chrome.\n\nSilahkan ketik `/jalan` untuk mulai blast.");
     } catch (e) {
         bot.sendMessage(chatId, "❌ Gagal membaca nomor.txt");
     }
 });
 
-// STEP 3: JALAN (FAST MODE 0 DETIK)
 bot.onText(/\/jalan/, async (msg) => {
     const chatId = msg.chat.id;
     if (isProcessing) return;
-
     isProcessing = true;
     successCount = 0;
-    
     try {
         const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim().length > 5);
         const scriptTemplate = fs.readFileSync('script.txt', 'utf-8');
-
         bot.sendMessage(chatId, "🚀 **BLAST JALAN (MODE FAST 0 DETIK)...**");
-
         for (let line of data) {
             if (!isProcessing) break;
-            
             let parts = line.split(/\s+/);
             let nama = parts[0];
             let nomor = parts[parts.length - 1].replace(/[^0-9]/g, '');
             let jid = nomor + "@s.whatsapp.net";
-
             try {
                 const pesan = scriptTemplate.replace(/{id}/g, nama);
-                // MODE TURBO 0 DETIK
                 await sock.sendMessage(jid, { text: pesan });
                 successCount++;
             } catch (err) {
@@ -154,7 +151,6 @@ bot.onText(/\/jalan/, async (msg) => {
                 return;
             }
         }
-
         bot.sendMessage(chatId, `🏁 **BLAST SELESAI!**\nTotal Terkirim: ${successCount}`);
         isProcessing = false;
     } catch (e) {
@@ -163,7 +159,6 @@ bot.onText(/\/jalan/, async (msg) => {
     }
 });
 
-// RESTART
 bot.onText(/\/restart/, (msg) => {
     const chatId = msg.chat.id;
     if (fs.existsSync('./session_data')) {
