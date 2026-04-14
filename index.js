@@ -17,7 +17,6 @@ app.listen(PORT, '0.0.0.0', () => console.log(`Web Server running on port ${PORT
 // --- FUNGSI HELPER ---
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Fitur Spintax: Menyelipkan karakter invisible unik agar pesan tidak identik 100%
 function generateUniqueInvis() {
     const chars = ['\u200B', '\u200C', '\u200D', '\uFEFF'];
     let str = '';
@@ -50,7 +49,9 @@ let isProcessing = false;
 let successCount = 0;
 let userState = {};
 let qrSent = false;
+let speedMode = 'FAST'; // Default mode
 
+// --- INITIALIZE WA ---
 async function initWA(chatId, method, phoneNumber = null) {
     const { state, saveCreds } = await useMultiFileAuthState('session_data');
     const { version } = await fetchLatestBaileysVersion();
@@ -62,27 +63,21 @@ async function initWA(chatId, method, phoneNumber = null) {
         browser: ["Mac OS", "Safari", "17.1"], 
         syncFullHistory: false,
         markOnlineOnConnect: true,
-        connectTimeoutMs: 60000,
-        defaultQueryTimeoutMs: 0,
-        keepAliveIntervalMs: 15000,
     });
 
     sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
-        
         if (qr && method === 'QR' && !qrSent) {
             qrSent = true; 
             const buffer = await QRCode.toBuffer(qr, { scale: 10 });
-            bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR INI**\nBarcode hanya dikirim sekali." });
+            bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR INI**" });
         }
-        
         if (connection === 'open') {
             qrSent = false;
-            bot.sendMessage(chatId, "✅ **WA TERHUBUNG**, silahkan `/filter` untuk membuka history");
+            bot.sendMessage(chatId, "✅ **WA TERHUBUNG**");
         }
-        
         if (connection === 'close') {
             const code = lastDisconnect.error?.output?.statusCode;
             if (code !== DisconnectReason.loggedOut) {
@@ -90,7 +85,7 @@ async function initWA(chatId, method, phoneNumber = null) {
             } else {
                 isProcessing = false;
                 qrSent = false;
-                bot.sendMessage(chatId, `❌ **WA LOGOUT.** Gunakan /login kembali.`);
+                bot.sendMessage(chatId, `❌ **WA LOGOUT.**`);
             }
         }
     });
@@ -99,10 +94,8 @@ async function initWA(chatId, method, phoneNumber = null) {
         setTimeout(async () => {
             try {
                 let code = await sock.requestPairingCode(phoneNumber);
-                bot.sendMessage(chatId, `🔑 **KODE PAIRING ANDA:**\n\n\`${code}\``, { parse_mode: 'Markdown' });
-            } catch (err) {
-                bot.sendMessage(chatId, "❌ Gagal meminta kode.");
-            }
+                bot.sendMessage(chatId, `🔑 **KODE PAIRING:** \`${code}\``, { parse_mode: 'Markdown' });
+            } catch (err) { bot.sendMessage(chatId, "❌ Gagal pairing."); }
         }, 6000);
     }
 }
@@ -118,10 +111,18 @@ bot.onText(/\/login/, (msg) => {
 
 bot.on('callback_query', (query) => {
     const chatId = query.message.chat.id;
-    if (query.data === 'login_qr') { initWA(chatId, 'QR'); }
-    else if (query.data === 'login_code') {
+    const data = query.data;
+
+    if (data === 'login_qr') { initWA(chatId, 'QR'); }
+    else if (data === 'login_code') {
         userState[chatId] = 'WAITING_NUMBER';
         bot.sendMessage(chatId, "Masukkan nomor WA (Contoh: 62813...)");
+    }
+    // Handling Pemilihan Mode Speed
+    else if (data.startsWith('mode_')) {
+        speedMode = data.replace('mode_', '').toUpperCase();
+        bot.answerCallbackQuery(query.id, { text: `Mode ${speedMode} Aktif!` });
+        bot.sendMessage(chatId, `🚀 Silahkan /jalan\n🦏 **SEMOGA KETEMU BADAK NYA !**`);
     }
 });
 
@@ -136,13 +137,17 @@ bot.on('message', async (msg) => {
     }
 });
 
+// --- FILTER DENGAN TOMBOL MODE ---
 bot.onText(/\/filter/, async (msg) => {
     const chatId = msg.chat.id;
     if (!sock) return bot.sendMessage(chatId, "Login dulu!");
+    
     try {
-        const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim().length > 5);
+        if (!fs.existsSync('nomor.txt')) return bot.sendMessage(chatId, "❌ nomor.txt tidak ada!");
+        const data = fs.readFileSync('nomor.txt', 'utf-8').split(/\r?\n/).filter(l => l.trim().length > 5);
         const total = data.length;
-        let progressMsg = await bot.sendMessage(chatId, `🔍 **PROSES FILTER (Jeda 1s)...**\n${createProgressBar(0, total)}`);
+
+        let progressMsg = await bot.sendMessage(chatId, `🔍 **PROSES FILTER...**\n${createProgressBar(0, total)}`);
 
         for (let i = 0; i < total; i++) {
             let num = data[i].trim().split(/\s+/).pop().replace(/[^0-9]/g, '') + "@s.whatsapp.net";
@@ -150,100 +155,63 @@ bot.onText(/\/filter/, async (msg) => {
             await delay(1000);
 
             if ((i + 1) % 10 === 0 || (i + 1) === total) {
-                await bot.editMessageText(`🔍 **PROSES FILTER (Jeda 1s)...**\n${createProgressBar(i + 1, total)}`, {
-                    chat_id: chatId,
-                    message_id: progressMsg.message_id
+                await bot.editMessageText(`🔍 **PROSES FILTER...**\n${createProgressBar(i + 1, total)}`, {
+                    chat_id: chatId, message_id: progressMsg.message_id
                 }).catch(() => {});
             }
         }
-        bot.sendMessage(chatId, "✅ **FILTER SELESAI**. Ketik `/jalan` untuk mulai.");
-    } catch (e) { bot.sendMessage(chatId, "❌ Gagal membaca nomor.txt"); }
+
+        const opts = {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "💥 SUPER FAST MELEDAK", callback_data: 'mode_super' }],
+                    [{ text: "🔥 FAST", callback_data: 'mode_fast' }],
+                    [{ text: "🐌 SLOW (Turbo after 30)", callback_data: 'mode_slow' }]
+                ]
+            }
+        };
+        bot.sendMessage(chatId, "✅ **FILTER SELESAI!**\nPilih mode kecepatan blast:", opts);
+    } catch (e) { bot.sendMessage(chatId, "❌ Gagal filter."); }
 });
 
+// --- JALAN BLAST ---
 bot.onText(/\/jalan/, async (msg) => {
     const chatId = msg.chat.id;
     if (isProcessing) return;
     if (!sock) return bot.sendMessage(chatId, "Login dulu!");
 
-    isProcessing = true;
-    successCount = 0;
-
     try {
-        const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim().length > 5);
+        const data = fs.readFileSync('nomor.txt', 'utf-8').split(/\r?\n/).filter(l => l.trim().length > 5);
         const script1 = fs.readFileSync('script1.txt', 'utf-8');
         const script2 = fs.readFileSync('script2.txt', 'utf-8');
         const total = data.length;
 
-        let progressMsg = await bot.sendMessage(chatId, `🚀 **NINJA BLAST MODE ACTIVE...**\n${createProgressBar(0, total)}`);
+        isProcessing = true;
+        successCount = 0;
+        let progressMsg = await bot.sendMessage(chatId, `🚀 **NINJA BLAST [MODE: ${speedMode}]**\n${createProgressBar(0, total)}`);
         
         for (let i = 0; i < total; i++) {
             if (!isProcessing) break;
 
-            let line = data[i];
-            let parts = line.trim().split(/\s+/);
+            let line = data[i].trim();
+            let parts = line.split(/\s+/);
             let nama = parts[0];
             let nomor = parts[parts.length - 1].replace(/[^0-9]/g, '');
             let jid = nomor + "@s.whatsapp.net";
             let selectedTemplate = (i % 2 === 0) ? script1 : script2;
             let currentIdx = i + 1;
 
-            // --- LOGIKA RITME NINJA SENDER ---
-            if (currentIdx <= 6) {
-                await delay(1000); // Pemanasan
-            } 
-
-            // SAFETY BREAK: Setiap 100 chat, istirahat 5 detik agar Railway & WA tidak crash
-            if (currentIdx % 100 === 0) {
-                await bot.sendMessage(chatId, `💤 **Siklus 100 chat tercapai. Jeda 5 detik...**`);
-                await delay(5000);
-            } else if (currentIdx === 71) {
-                await bot.sendMessage(chatId, "⏳ *Jeda Istirahat 3 Detik (Ninja Break)...*");
-                await delay(3000);
+            // --- LOGIKA JEDA BERDASARKAN MODE ---
+            if (speedMode === 'SUPER') {
+                // 0 detik / Tanpa Jeda
+            } else if (speedMode === 'FAST') {
+                await delay(1000);
+            } else if (speedMode === 'SLOW') {
+                // Jeda 2 detik, setelah 30 chat jadi 1 detik (Turbo)
+                let jedaSlow = (currentIdx <= 30) ? 2000 : 1000;
+                await delay(jedaSlow);
             }
 
             try {
-                // Menambahkan karakter invisible di akhir pesan agar AI WA bingung membaca kemiripan pesan
                 const pesan = selectedTemplate.replace(/{id}/g, nama) + generateUniqueInvis();
-                
-                await sock.sendPresenceUpdate('composing', jid);
-                
-                // Jeda mikroskopis 20ms agar proses send tidak tabrakan di Railway
-                if (currentIdx > 6) await delay(20); 
-                
-                await sock.sendMessage(jid, { text: pesan });
-                successCount++;
-
-                if (successCount % 5 === 0 || successCount === total) {
-                    await bot.editMessageText(`🚀 **NINJA BLAST: ${successCount}/${total}**\n${createProgressBar(successCount, total)}`, {
-                        chat_id: chatId,
-                        message_id: progressMsg.message_id
-                    }).catch(() => {});
-                }
-                
-            } catch (err) {
-                console.log(`Gagal ke ${jid}`);
-                continue; 
-            }
-        }
-        bot.sendMessage(chatId, `🏁 **MISI SELESAI!**\nBerhasil: ${successCount}\nSemoga tembus BADAK! 🦏`);
-        isProcessing = false;
-    } catch (e) { 
-        bot.sendMessage(chatId, "❌ Gagal membaca file script1.txt atau script2.txt."); 
-        isProcessing = false; 
-    }
-});
-
-bot.onText(/\/restart/, async (msg) => {
-    const chatId = msg.chat.id;
-    isProcessing = false;
-    qrSent = false;
-    bot.sendMessage(chatId, "♻️ **CLEANING...**");
-    if (sock) { try { await sock.logout(); } catch (e) {} sock.end(); }
-    setTimeout(() => {
-        if (fs.existsSync('./session_data')) fs.rmSync('./session_data', { recursive: true, force: true });
-        bot.sendMessage(chatId, welcomeMessage).then(() => {
-            bot.sendMessage(chatId, "✅ **READY.** Silahkan `/login`.");
-        });
-        sock = null; 
-    }, 2000);
-});
+                await sock.send
