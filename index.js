@@ -8,58 +8,54 @@ bot.onText(/\/jalan/, async (msg) => {
 
     try {
         const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim().length > 5);
-        const script1 = fs.readFileSync('script1.txt', 'utf-8');
-        const script2 = fs.readFileSync('script2.txt', 'utf-8');
+        const s1 = fs.readFileSync('script1.txt', 'utf-8');
+        const s2 = fs.readFileSync('script2.txt', 'utf-8');
         const total = data.length;
 
-        let progressMsg = await bot.sendMessage(chatId, `🌪️ **ULTRA STORM STARTING...**`);
+        let progressMsg = await bot.sendMessage(chatId, `🌪️ **ULTRA TURBO FLOW ACTIVE...**`);
 
-        // --- TEKNIK BATCH PARALLEL (50 PESAN PER TEMBAKAN) ---
-        const batchSize = 50; 
-        
-        for (let i = 0; i < total; i += batchSize) {
-            if (!isProcessing) break;
+        // --- ENGINE: CONCURRENCY LIMITER ---
+        // Kita kirim 50 pesan sekaligus, tapi begitu 1 selesai, 1 yang lain langsung masuk
+        const pLimit = (await import('p-limit')).default; // Jika belum ada, install: npm install p-limit
+        const limit = pLimit(50); // MAX 50 PROSES BERJALAN BERSAMAAN
 
-            // Ambil potongan 50 nomor
-            const currentBatch = data.slice(i, i + batchSize);
-            
-            // Tembak 50 nomor secara paralel (0 detik antar pesan dalam batch)
-            const promises = currentBatch.map((line, index) => {
-                const globalIdx = i + index;
+        const tasks = data.map((line, i) => {
+            return limit(async () => {
+                if (!isProcessing) return;
+
                 let parts = line.trim().split(/\s+/);
                 let nama = parts[0];
                 let nomor = parts[parts.length - 1].replace(/[^0-9]/g, '');
                 let jid = nomor + "@s.whatsapp.net";
-                let selectedTemplate = (globalIdx % 2 === 0) ? script1 : script2;
-                const pesan = selectedTemplate.replace(/{id}/g, nama);
+                let msgText = (i % 2 === 0 ? s1 : s2).replace(/{id}/g, nama);
 
-                // Kirim tanpa await di dalam map agar meledak
-                return sock.sendMessage(jid, { text: pesan })
-                    .then(() => { successCount++; })
-                    .catch(() => console.log(`Gagal: ${nomor}`));
+                try {
+                    // Eksekusi kirim pesan
+                    await sock.sendMessage(jid, { text: msgText });
+                    successCount++;
+
+                    // Update progress setiap 10 sukses supaya Telegram gak anggap spam
+                    if (successCount % 10 === 0 || successCount === total) {
+                        bot.editMessageText(`🚀 **FLOWING: ${successCount}/${total}**\n${createProgressBar(successCount, total)}`, {
+                            chat_id: chatId,
+                            message_id: progressMsg.message_id
+                        }).catch(() => {});
+                    }
+                } catch (e) {
+                    console.log(`Gagal ke ${nomor}`);
+                }
             });
+        });
 
-            // Jalankan batch
-            await Promise.all(promises);
+        // Jalankan semua task secara mengalir
+        await Promise.all(tasks);
 
-            // Update Progress di Telegram
-            await bot.editMessageText(`🚀 **SENT: ${successCount}/${total}**\n${createProgressBar(successCount, total)}`, {
-                chat_id: chatId,
-                message_id: progressMsg.message_id
-            }).catch(() => {});
-
-            // Kasih jeda mikro (0.1 detik) antar batch supaya socket WA tidak putus (Limit Protection)
-            if (i + batchSize < total) {
-                await delay(100); 
-            }
-        }
-
-        bot.sendMessage(chatId, `🏁 **BADAI SELESAI!**\n✅ Berhasil: ${successCount}`);
+        bot.sendMessage(chatId, `🏁 **DONE!** Berhasil: ${successCount}`);
         isProcessing = false;
 
-    } catch (e) { 
+    } catch (e) {
         console.error(e);
-        bot.sendMessage(chatId, "❌ Bot Error: Periksa format nomor.txt atau koneksi."); 
-        isProcessing = false; 
+        bot.sendMessage(chatId, "❌ Crash terdeteksi! Kurangi jumlah data atau upgrade RAM server.");
+        isProcessing = false;
     }
 });
