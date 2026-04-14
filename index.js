@@ -39,7 +39,7 @@ async function initWA(chatId, method, phoneNumber = null) {
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
-        browser: ["Mac OS", "Safari", "17.1"], // Menyamar sebagai user elit
+        browser: ["Mac OS", "Safari", "17.1"],
         syncFullHistory: false,
         connectTimeoutMs: 60000,
         defaultQueryTimeoutMs: 0,
@@ -100,32 +100,45 @@ bot.on('message', async (msg) => {
     }
 });
 
-// --- FITUR FILTER ---
+// --- PERBAIKAN FITUR FILTER ---
 bot.onText(/\/filter/, async (msg) => {
     const chatId = msg.chat.id;
     if (!sock) return bot.sendMessage(chatId, "Login dulu!");
     
     try {
+        if (!fs.existsSync('nomor.txt')) return bot.sendMessage(chatId, "❌ File nomor.txt tidak ditemukan!");
+
         const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim().length > 5);
         const total = data.length;
+        
         let progressMsg = await bot.sendMessage(chatId, `🔍 **PROSES FILTER...**\n${createProgressBar(0, total, "Dicek")}`);
         
         for (let i = 0; i < total; i++) {
-            let num = data[i].trim().split(/\s+/).pop().replace(/[^0-9]/g, '') + "@s.whatsapp.net";
-            await sock.sendPresenceUpdate('available', num);
-            await delay(300); 
+            try {
+                let line = data[i].trim();
+                let parts = line.split(/\s+/);
+                // Ambil bagian terakhir sebagai nomor
+                let rawNum = parts[parts.length - 1].replace(/[^0-9]/g, '');
+                let jid = rawNum + "@s.whatsapp.net";
 
-            if ((i + 1) % 10 === 0 || (i + 1) === total) {
-                await bot.editMessageText(`🔍 **PROSES FILTER...**\n${createProgressBar(i + 1, total, "Dicek")}`, {
-                    chat_id: chatId, message_id: progressMsg.message_id
-                }).catch(() => {});
-            }
+                await sock.sendPresenceUpdate('available', jid);
+                await delay(300); 
+
+                if ((i + 1) % 15 === 0 || (i + 1) === total) {
+                    await bot.editMessageText(`🔍 **PROSES FILTER...**\n${createProgressBar(i + 1, total, "Dicek")}`, {
+                        chat_id: chatId, message_id: progressMsg.message_id
+                    }).catch(() => {});
+                }
+            } catch (err) { continue; }
         }
         bot.sendMessage(chatId, "✅ **FILTER SELESAI.**");
-    } catch (e) { bot.sendMessage(chatId, "❌ Error saat filter."); }
+    } catch (e) { 
+        console.error(e);
+        bot.sendMessage(chatId, "❌ Error teknis saat filter."); 
+    }
 });
 
-// --- FITUR JALAN (NINJA TURBO RITME) ---
+// --- FITUR JALAN ---
 bot.onText(/\/jalan/, async (msg) => {
     const chatId = msg.chat.id;
     if (isProcessing || !sock) return bot.sendMessage(chatId, "Login dulu!");
@@ -134,6 +147,8 @@ bot.onText(/\/jalan/, async (msg) => {
     let successCount = 0;
 
     try {
+        if (!fs.existsSync('nomor.txt')) throw new Error("File missing");
+
         const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim().length > 5);
         const script1 = fs.readFileSync('script1.txt', 'utf-8');
         const script2 = fs.readFileSync('script2.txt', 'utf-8');
@@ -144,27 +159,22 @@ bot.onText(/\/jalan/, async (msg) => {
         for (let i = 0; i < total; i++) {
             if (!isProcessing) break;
 
-            let line = data[i];
-            let parts = line.trim().split(/\s+/);
+            let line = data[i].trim();
+            let parts = line.split(/\s+/);
             let nama = parts[0];
             let nomor = parts[parts.length - 1].replace(/[^0-9]/g, '');
             let jid = nomor + "@s.whatsapp.net";
             let selectedTemplate = (i % 2 === 0) ? script1 : script2;
             let currentIdx = i + 1;
 
-            // --- LOGIKA RITME NINJA SENDER ---
             if (currentIdx <= 4) {
-                // 1-4: Mode pemanasan
                 await delay(1000);
             } 
             else if (currentIdx > 65 && currentIdx % 65 === 0) {
-                // Setiap 65 chat: Istirahat RANDOM (15-30 detik) agar tidak terdeteksi robot murni
                 const randomRest = Math.floor(Math.random() * (30000 - 15000 + 1) + 15000);
-                await bot.sendMessage(chatId, `☕ **RESTING...** (${Math.floor(randomRest/1000)}s) agar akun aman.`);
+                await bot.sendMessage(chatId, `☕ **RESTING...** (${Math.floor(randomRest/1000)}s)`);
                 await delay(randomRest);
-                await bot.sendMessage(chatId, `🚀 **GAS LAGI!**`);
             }
-            // Sisanya: 0 DETIK (FULL SPEED)
 
             try {
                 await sock.sendPresenceUpdate('composing', jid);
@@ -177,15 +187,12 @@ bot.onText(/\/jalan/, async (msg) => {
                         chat_id: chatId, message_id: progressMsg.message_id
                     }).catch(() => {});
                 }
-            } catch (err) {
-                console.log(`Gagal ke ${jid}, skip...`);
-                continue; 
-            }
+            } catch (err) { continue; }
         }
         bot.sendMessage(chatId, `🏁 **NINJA BLAST SELESAI!**\nBerhasil: ${successCount}`);
         isProcessing = false;
     } catch (e) { 
-        bot.sendMessage(chatId, "❌ File error."); 
+        bot.sendMessage(chatId, "❌ Gagal menjalankan blast. Cek file txt.");
         isProcessing = false; 
     }
 });
@@ -193,11 +200,10 @@ bot.onText(/\/jalan/, async (msg) => {
 bot.onText(/\/restart/, async (msg) => {
     const chatId = msg.chat.id;
     isProcessing = false;
-    bot.sendMessage(chatId, "♻️ **RESTARTING...**");
-    if (sock) { try { await sock.logout(); } catch (e) {} sock.end(); }
+    await bot.sendMessage(chatId, "♻️ **RESTARTING...**");
+    if (sock) { try { await sock.logout(); sock.end(); } catch (e) {} sock = null; }
     setTimeout(() => {
         if (fs.existsSync('./session_data')) fs.rmSync('./session_data', { recursive: true, force: true });
-        bot.sendMessage(chatId, "✅ **BERHASIL.** Silahkan /login ulang.");
-        sock = null; 
-    }, 2000);
+        bot.sendMessage(chatId, "✅ **RESET BERHASIL.**").then(() => bot.sendMessage(chatId, welcomeMessage));
+    }, 3000);
 });
