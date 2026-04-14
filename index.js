@@ -38,7 +38,7 @@ let userState = {};
 let qrSent = false;
 let speedMode = 'FAST'; 
 
-// --- INITIALIZE WA (STEALTH CONFIG) ---
+// --- INITIALIZE WA ---
 async function initWA(chatId, method, phoneNumber = null) {
     const { state, saveCreds } = await useMultiFileAuthState('session_data');
     const { version } = await fetchLatestBaileysVersion();
@@ -47,14 +47,11 @@ async function initWA(chatId, method, phoneNumber = null) {
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
-        // --- PENYAMARAN SISTEM (STEALTH) ---
-        // Meniru macOS dengan Chrome versi terbaru agar tidak terbaca sebagai server Linux/Ubuntu
         browser: ["Mac OS", "Chrome", "122.0.6261.129"], 
-        syncFullHistory: false, // Jangan sinkron history lama untuk kurangi beban data
+        syncFullHistory: false,
         markOnlineOnConnect: true,
         connectTimeoutMs: 60000,
         defaultQueryTimeoutMs: 0,
-        // Hindari membaca pesan dari grup atau status untuk proteksi limit
         shouldIgnoreJid: jid => jid.includes('@g.us') || jid.includes('@broadcast'),
     });
 
@@ -65,11 +62,11 @@ async function initWA(chatId, method, phoneNumber = null) {
         if (qr && method === 'QR' && !qrSent) {
             qrSent = true; 
             const buffer = await QRCode.toBuffer(qr, { scale: 10 });
-            bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR INI (NINJA STEALTH)**" });
+            bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR INI**" });
         }
         if (connection === 'open') {
             qrSent = false;
-            bot.sendMessage(chatId, "✅ **WA TERHUBUNG (STEALTH MODE)!**\nSilahkan ketik `/filter`.");
+            bot.sendMessage(chatId, "✅ **WA TERHUBUNG!**\nSilahkan ketik `/filter`.");
         }
         if (connection === 'close') {
             const reason = lastDisconnect?.error?.output?.statusCode;
@@ -98,7 +95,7 @@ bot.onText(/\/start/, (msg) => bot.sendMessage(msg.chat.id, "Bot Ready! /login d
 bot.onText(/\/login/, (msg) => {
     qrSent = false;
     const opts = { reply_markup: { inline_keyboard: [[{ text: "SCAN QR", callback_data: 'login_qr' }, { text: "CODE", callback_data: 'login_code' }]] } };
-    bot.sendMessage(msg.chat.id, "Metode Login:", opts);
+    bot.sendMessage(msg.chat.id, "Metode Login:");
 });
 
 bot.onText(/\/stop/, (msg) => {
@@ -106,7 +103,7 @@ bot.onText(/\/stop/, (msg) => {
         isProcessing = false;
         bot.sendMessage(msg.chat.id, "🛑 **BLAST DIHENTIKAN PAKSA!**");
     } else {
-        bot.sendMessage(msg.chat.id, "⚠️ Tidak ada proses blast yang sedang berjalan.");
+        bot.sendMessage(msg.chat.id, "⚠️ Tidak ada proses blast.");
     }
 });
 
@@ -162,7 +159,7 @@ bot.onText(/\/filter/, async (msg) => {
     } catch (e) { bot.sendMessage(chatId, "❌ File nomor.txt bermasalah."); }
 });
 
-// --- JALAN ---
+// --- JALAN (NO DELAY MODE) ---
 bot.onText(/\/jalan/, async (msg) => {
     const chatId = msg.chat.id;
     if (isProcessing) return bot.sendMessage(chatId, "⚠️ Blast sedang berjalan!");
@@ -190,13 +187,12 @@ bot.onText(/\/jalan/, async (msg) => {
             // --- LOGIKA DELAY NINJA SENDER ---
             if (speedMode === 'SUPER') {
                 if (currentIdx <= 6) {
-                    await delay(1000); // 1-6 Chat: 1 Detik
+                    await delay(1000); 
                 } else if (currentIdx === 71) {
                     await bot.sendMessage(chatId, "⏳ **Jeda Aman 3 Detik...**").catch(()=>{});
-                    await delay(3000); // Chat 71: Jeda 3 Detik
-                } else {
-                    // Chat 7-70 & Chat 72 ke atas: 0 Detik (Tanpa jeda)
+                    await delay(3000); 
                 }
+                // SELAIN ITU: 0 DETIK (LANGSUNG GAS)
             } else if (speedMode === 'FAST') {
                 await delay(1000);
             } else if (speedMode === 'SLOW') {
@@ -204,20 +200,23 @@ bot.onText(/\/jalan/, async (msg) => {
             }
 
             try {
-                // Presence update (Typing) membuat pengiriman lebih natural
-                await sock.sendPresenceUpdate('composing', jid);
-                await delay(200); 
+                // Untuk SUPER mode, kita hilangkan presenceUpdate agar benar-benar 0 detik
+                if (speedMode !== 'SUPER') {
+                    await sock.sendPresenceUpdate('composing', jid);
+                    await delay(200);
+                }
+                
                 await sock.sendMessage(jid, { text: msgText });
                 
                 success++;
-                if (success % 2 === 0 || i === lines.length - 1) {
+                if (success % 10 === 0 || i === lines.length - 1) { // Edit progress setiap 10 chat agar tidak limit Telegram
                     bot.editMessageText(`🚀 Proses: ${createProgressBar(success, lines.length)}`, { chat_id: chatId, message_id: progressMsg.message_id }).catch(()=>{});
                 }
             } catch (e) { console.log("Gagal: " + nomor); }
         }
 
         if (isProcessing) {
-            bot.sendMessage(chatId, `🏁 **MISI SELESAI!**\n✅ Berhasil: ${success}\n🦏 TETAP SEMANGAT YA !!`);
+            bot.sendMessage(chatId, `🏁 **MISI SELESAI!**\n✅ Berhasil: ${success}\n🦏 TETAP SEMANGAT !!`);
         }
         isProcessing = false;
     } catch (e) { 
