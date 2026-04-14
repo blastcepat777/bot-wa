@@ -3,7 +3,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const QRCode = require('qrcode');
 const pino = require('pino');
 const fs = require('fs');
-const path = require('path'); // Penting untuk Railway
+const path = require('path');
 const express = require('express');
 
 const TOKEN = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
@@ -34,7 +34,7 @@ function createProgressBar(current, total) {
 
 let sock;
 let isProcessing = false;
-let userState = {}; // Untuk menyimpan status koneksi per user
+let userState = {};
 let qrSent = false;
 let speedMode = 'FAST'; 
 
@@ -42,7 +42,6 @@ async function initWA(chatId, method, phoneNumber = null) {
     const { state, saveCreds } = await useMultiFileAuthState('session_data');
     const { version } = await fetchLatestBaileysVersion();
 
-    // Reset status koneksi saat inisialisasi ulang
     if (!userState[chatId]) userState[chatId] = {};
     userState[chatId].isConnected = false;
 
@@ -70,7 +69,6 @@ async function initWA(chatId, method, phoneNumber = null) {
 
         if (connection === 'open') {
             qrSent = false;
-            // ANTI-SPAM: Hanya kirim pesan jika sebelumnya belum terdeteksi 'open'
             if (!userState[chatId].isConnected) {
                 bot.sendMessage(chatId, "✅ **WA TERHUBUNG!**\nKetik `/filter` untuk cek nomor.");
                 userState[chatId].isConnected = true; 
@@ -136,19 +134,15 @@ bot.on('message', (msg) => {
     }
 });
 
-// --- FIX FILTER (PEMBACAAN FILE LEBIH KUAT) ---
 bot.onText(/\/filter/, async (msg) => {
     const chatId = msg.chat.id;
     if (!sock) return bot.sendMessage(chatId, "Hubungkan WA dulu!");
-    
-    const filePath = path.join(__dirname, 'nomor.txt'); // Pastikan path absolut
+    const filePath = path.join(__dirname, 'nomor.txt');
 
     try {
         if (!fs.existsSync(filePath)) return bot.sendMessage(chatId, "❌ File `nomor.txt` tidak ditemukan!");
-        
         const raw = fs.readFileSync(filePath, 'utf-8').replace(/\r/g, '');
         const lines = raw.split('\n').filter(l => l.trim().length > 5);
-        
         if (lines.length === 0) return bot.sendMessage(chatId, "❌ File `nomor.txt` kosong!");
 
         let progressMsg = await bot.sendMessage(chatId, `🔍 **FILTERING...**`);
@@ -170,7 +164,6 @@ bot.onText(/\/filter/, async (msg) => {
     } catch (e) { bot.sendMessage(chatId, "❌ Gagal baca nomor.txt"); }
 });
 
-// --- FIX JALAN ---
 bot.onText(/\/jalan/, async (msg) => {
     const chatId = msg.chat.id;
     if (isProcessing) return;
@@ -197,13 +190,20 @@ bot.onText(/\/jalan/, async (msg) => {
             let jid = nomor + "@s.whatsapp.net";
             let msgText = (i % 2 === 0 ? s1 : s2).replace(/{id}/g, nama) + generateUniqueInvis();
             
-            // --- LOGIKA SUPER FAST (MELEDAK) ---
+            // --- LOGIKA NINJA SENDER SUPER FAST ---
             if (speedMode === 'SUPER') {
-                if ((i + 1) <= 6) await delay(1000); // 1-6 jeda 1s
-                else if ((i + 1) === 71) await delay(3000); // 71 jeda 3s
-                // Sisanya 0 DETIK
+                const chatNumber = i + 1;
+                if (chatNumber <= 4) {
+                    await delay(1000); // 1-4: Pemanasan 1 detik
+                } else if (chatNumber >= 5 && chatNumber <= 70) {
+                    // 5-70: MELEDAK 0 DETIK (Tanpa await delay)
+                } else if (chatNumber === 71) {
+                    await delay(3000); // 71: Istirahat 3 detik
+                } else {
+                    // 72 ke atas: MELEDAK 0 DETIK (Tanpa await delay)
+                }
             } else {
-                await delay(1000);
+                await delay(1000); // Mode FAST biasa tetap 1 detik
             }
 
             try {
