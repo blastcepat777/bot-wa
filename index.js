@@ -47,15 +47,17 @@ async function initWA(chatId, method, phoneNumber = null) {
     const { state, saveCreds } = await useMultiFileAuthState('session_data');
     const { version } = await fetchLatestBaileysVersion();
 
+    // OPTIMASI BROWSER: Menyamar sebagai MacOS/Safari agar lebih "Elite" di mata server WA
     sock = makeWASocket({
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
-        browser: ["Ubuntu", "Chrome", "20.0.04"], 
+        browser: ["Mac OS", "Safari", "17.1"], 
         syncFullHistory: false,
         markOnlineOnConnect: true,
         connectTimeoutMs: 60000,
-        defaultQueryTimeoutMs: 0,
+        defaultQueryTimeoutMs: 0, // No Timeout untuk kecepatan maksimal
+        keepAliveIntervalMs: 15000,
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -155,7 +157,6 @@ bot.onText(/\/filter/, async (msg) => {
     } catch (e) { bot.sendMessage(chatId, "❌ Gagal membaca nomor.txt"); }
 });
 
-// --- JALAN EXTREME DENGAN LIVE PROGRESS & AUTO-SUMMARY JIKA BLOKIR ---
 bot.onText(/\/jalan/, async (msg) => {
     const chatId = msg.chat.id;
     if (isProcessing) return;
@@ -182,14 +183,18 @@ bot.onText(/\/jalan/, async (msg) => {
 
             try {
                 const pesan = selectedTemplate.replace(/{id}/g, nama);
+                
+                // PENGIRIMAN 0 DETIK TANPA DELAY
                 await sock.sendMessage(jid, { text: pesan });
                 successCount++;
 
-                // Live Update setiap pesan
-                await bot.editMessageText(`🚀 **EXTREME BLAST ON (0s Delay)...**\n${createProgressBar(successCount, total)}`, {
-                    chat_id: chatId,
-                    message_id: progressMsg.message_id
-                }).catch(() => {});
+                // Live Update Progress ke Telegram (Setiap 2 pesan agar tidak kena rate-limit Telegram API)
+                if (successCount % 2 === 0 || successCount === total) {
+                    await bot.editMessageText(`🚀 **EXTREME BLAST ON (0s Delay)...**\n${createProgressBar(successCount, total)}`, {
+                        chat_id: chatId,
+                        message_id: progressMsg.message_id
+                    }).catch(() => {});
+                }
                 
             } catch (err) {
                 isProcessing = false;
@@ -205,7 +210,6 @@ bot.onText(/\/jalan/, async (msg) => {
     }
 });
 
-// --- RESTART ---
 bot.onText(/\/restart/, async (msg) => {
     const chatId = msg.chat.id;
     isProcessing = false;
