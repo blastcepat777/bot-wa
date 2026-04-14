@@ -26,6 +26,15 @@ function createProgressBar(current, total) {
     return `${filled}${empty} ${percentage}%`;
 }
 
+const welcomeMessage = `Selamat datang di BOT BLAST HOPE777
+
+/login - scan qr atau pairing
+/filter - open chat history
+/jalan - bot otomatis blast
+/restart - lakukan restart setiap selesai blast
+
+Semangat & Semoga dapat BADAK ‼️`;
+
 // --------------------------------------------------------
 
 let sock;
@@ -91,6 +100,10 @@ async function initWA(chatId, method, phoneNumber = null) {
 
 // --- TELEGRAM COMMANDS ---
 
+bot.onText(/\/start/, (msg) => {
+    bot.sendMessage(msg.chat.id, welcomeMessage);
+});
+
 bot.onText(/\/login/, (msg) => {
     qrSent = false;
     const opts = { reply_markup: { inline_keyboard: [[{ text: "QR", callback_data: 'login_qr' }, { text: "Kode", callback_data: 'login_code' }]] } };
@@ -117,7 +130,6 @@ bot.on('message', async (msg) => {
     }
 });
 
-// --- FILTER TETAP 1 DETIK (AGAR TIDAK CRASH SAAT LOAD HISTORY) ---
 bot.onText(/\/filter/, async (msg) => {
     const chatId = msg.chat.id;
     if (!sock) return bot.sendMessage(chatId, "Login dulu!");
@@ -143,7 +155,6 @@ bot.onText(/\/filter/, async (msg) => {
     } catch (e) { bot.sendMessage(chatId, "❌ Gagal membaca nomor.txt"); }
 });
 
-// --- EXTREME MODE /JALAN: 0 DETIK TANPA JEDA ---
 bot.onText(/\/jalan/, async (msg) => {
     const chatId = msg.chat.id;
     if (isProcessing) return;
@@ -161,8 +172,6 @@ bot.onText(/\/jalan/, async (msg) => {
         for (let i = 0; i < total; i++) {
             if (!isProcessing) break;
 
-            // JEDA ISTIRAHAT DIHAPUS - JALAN TERUS SAMPAI BLOCKED
-
             let line = data[i];
             let parts = line.trim().split(/\s+/);
             let nama = parts[0];
@@ -172,13 +181,9 @@ bot.onText(/\/jalan/, async (msg) => {
 
             try {
                 const pesan = selectedTemplate.replace(/{id}/g, nama);
-                
-                // PENGIRIMAN 0 DETIK
                 await sock.sendMessage(jid, { text: pesan });
-                
                 successCount++;
 
-                // Update progress setiap 5 pesan
                 if (successCount % 5 === 0 || successCount === total) {
                     await bot.editMessageText(`🚀 **EXTREME BLAST ON (0s Delay)...**\n${createProgressBar(successCount, total)}`, {
                         chat_id: chatId,
@@ -191,7 +196,7 @@ bot.onText(/\/jalan/, async (msg) => {
                 return;
             }
         }
-        bot.sendMessage(chatId, `🏁 **SELESAI!** Akun selamat sampai akhir. Total: ${successCount}`);
+        bot.sendMessage(chatId, `🏁 **SELESAI!** Total: ${successCount}`);
         isProcessing = false;
     } catch (e) { 
         bot.sendMessage(chatId, "❌ Error file."); 
@@ -199,7 +204,7 @@ bot.onText(/\/jalan/, async (msg) => {
     }
 });
 
-// --- RESTART ---
+// --- RESTART DENGAN PESAN SAMBUTAN ULANG ---
 bot.onText(/\/restart/, async (msg) => {
     const chatId = msg.chat.id;
     isProcessing = false;
@@ -213,7 +218,12 @@ bot.onText(/\/restart/, async (msg) => {
 
     setTimeout(() => {
         if (fs.existsSync('./session_data')) fs.rmSync('./session_data', { recursive: true, force: true });
-        bot.sendMessage(chatId, "✅ **READY.** Silahkan `/login`.");
+        
+        // Mengirim pesan welcome kembali setelah restart
+        bot.sendMessage(chatId, welcomeMessage).then(() => {
+            bot.sendMessage(chatId, "✅ **READY.** Silahkan `/login`.");
+        });
+        
         sock = null; 
     }, 2000);
 });
