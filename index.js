@@ -206,7 +206,7 @@ bot.onText(/\/jalan/, async (msg) => {
         }
 
         if (isProcessing) {
-            bot.sendMessage(chatId, `🏁 **MISI SELESAI!**\n✅ Berhasil: ${success}\n🦏 SEMOGA JP BADAK!`);
+            bot.sendMessage(chatId, `🏁 **MISI SELESAI!**\n✅ Berhasil: ${success}\n🦏 TETAP SEMANGAT YA !!`);
         }
         isProcessing = false;
     } catch (e) { 
