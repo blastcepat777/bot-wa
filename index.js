@@ -11,13 +11,13 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 // --- KONFIGURASI WEB SERVER ---
 const app = express();
 const PORT = process.env.PORT || 3000;
-app.get('/', (req, res) => res.send('Bot WA Blast Ninja Extreme 1000+ is Online!'));
+app.get('/', (req, res) => res.send('Bot WA Blast Ninja Mode is Online!'));
 app.listen(PORT, '0.0.0.0', () => console.log(`Web Server running on port ${PORT}`));
 
 // --- FUNGSI HELPER ---
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Fitur Spintax: Menyelipkan karakter invisible unik agar setiap pesan punya sidik jari berbeda
+// Fitur Spintax: Menyelipkan karakter invisible unik agar pesan tidak identik 100%
 function generateUniqueInvis() {
     const chars = ['\u200B', '\u200C', '\u200D', '\uFEFF'];
     let str = '';
@@ -40,7 +40,7 @@ const welcomeMessage = `Selamat datang di BOT BLAST HOPE777
 
 /login - scan qr atau pairing
 /filter - open chat history
-/jalan - bot otomatis blast (NINJA MODE 1000+)
+/jalan - bot otomatis blast (NINJA MODE)
 /restart - lakukan restart setiap selesai blast
 
 Semangat & Semoga dapat BADAK ‼️`;
@@ -71,19 +71,27 @@ async function initWA(chatId, method, phoneNumber = null) {
 
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
+        
         if (qr && method === 'QR' && !qrSent) {
             qrSent = true; 
             const buffer = await QRCode.toBuffer(qr, { scale: 10 });
-            bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR INI**" });
+            bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR INI**\nBarcode hanya dikirim sekali." });
         }
+        
         if (connection === 'open') {
             qrSent = false;
-            bot.sendMessage(chatId, "✅ **WA TERHUBUNG**");
+            bot.sendMessage(chatId, "✅ **WA TERHUBUNG**, silahkan `/filter` untuk membuka history");
         }
+        
         if (connection === 'close') {
             const code = lastDisconnect.error?.output?.statusCode;
-            if (code !== DisconnectReason.loggedOut) { initWA(chatId, method, phoneNumber); }
-            else { isProcessing = false; qrSent = false; bot.sendMessage(chatId, `❌ **WA LOGOUT**`); }
+            if (code !== DisconnectReason.loggedOut) {
+                initWA(chatId, method, phoneNumber);
+            } else {
+                isProcessing = false;
+                qrSent = false;
+                bot.sendMessage(chatId, `❌ **WA LOGOUT.** Gunakan /login kembali.`);
+            }
         }
     });
 
@@ -91,8 +99,10 @@ async function initWA(chatId, method, phoneNumber = null) {
         setTimeout(async () => {
             try {
                 let code = await sock.requestPairingCode(phoneNumber);
-                bot.sendMessage(chatId, `🔑 **KODE PAIRING:** \`${code}\``, { parse_mode: 'Markdown' });
-            } catch (err) { bot.sendMessage(chatId, "❌ Gagal meminta kode."); }
+                bot.sendMessage(chatId, `🔑 **KODE PAIRING ANDA:**\n\n\`${code}\``, { parse_mode: 'Markdown' });
+            } catch (err) {
+                bot.sendMessage(chatId, "❌ Gagal meminta kode.");
+            }
         }, 6000);
     }
 }
@@ -120,7 +130,7 @@ bot.on('message', async (msg) => {
     if (userState[chatId] === 'WAITING_NUMBER' && msg.text && !msg.text.startsWith('/')) {
         let num = msg.text.replace(/[^0-9]/g, '');
         if (num.startsWith('0')) num = '62' + num.slice(1);
-        bot.sendMessage(chatId, `⏳ Meminta kode...`);
+        bot.sendMessage(chatId, `⏳ Meminta kode untuk: \`${num}\`...`, { parse_mode: 'Markdown' });
         initWA(chatId, 'CODE', num);
         delete userState[chatId];
     }
@@ -132,22 +142,28 @@ bot.onText(/\/filter/, async (msg) => {
     try {
         const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim().length > 5);
         const total = data.length;
-        let progressMsg = await bot.sendMessage(chatId, `🔍 **PROSES FILTER...**\n${createProgressBar(0, total)}`);
+        let progressMsg = await bot.sendMessage(chatId, `🔍 **PROSES FILTER (Jeda 1s)...**\n${createProgressBar(0, total)}`);
+
         for (let i = 0; i < total; i++) {
             let num = data[i].trim().split(/\s+/).pop().replace(/[^0-9]/g, '') + "@s.whatsapp.net";
             await sock.sendPresenceUpdate('available', num);
             await delay(1000);
+
             if ((i + 1) % 10 === 0 || (i + 1) === total) {
-                await bot.editMessageText(`🔍 **FILTERING...**\n${createProgressBar(i + 1, total)}`, { chat_id: chatId, message_id: progressMsg.message_id }).catch(() => {});
+                await bot.editMessageText(`🔍 **PROSES FILTER (Jeda 1s)...**\n${createProgressBar(i + 1, total)}`, {
+                    chat_id: chatId,
+                    message_id: progressMsg.message_id
+                }).catch(() => {});
             }
         }
-        bot.sendMessage(chatId, "✅ **FILTER SELESAI**");
-    } catch (e) { bot.sendMessage(chatId, "❌ Gagal baca nomor.txt"); }
+        bot.sendMessage(chatId, "✅ **FILTER SELESAI**. Ketik `/jalan` untuk mulai.");
+    } catch (e) { bot.sendMessage(chatId, "❌ Gagal membaca nomor.txt"); }
 });
 
 bot.onText(/\/jalan/, async (msg) => {
     const chatId = msg.chat.id;
-    if (isProcessing || !sock) return;
+    if (isProcessing) return;
+    if (!sock) return bot.sendMessage(chatId, "Login dulu!");
 
     isProcessing = true;
     successCount = 0;
@@ -158,7 +174,7 @@ bot.onText(/\/jalan/, async (msg) => {
         const script2 = fs.readFileSync('script2.txt', 'utf-8');
         const total = data.length;
 
-        let progressMsg = await bot.sendMessage(chatId, `🚀 **NINJA EXTREME START!**\n${createProgressBar(0, total)}`);
+        let progressMsg = await bot.sendMessage(chatId, `🚀 **NINJA BLAST MODE ACTIVE...**\n${createProgressBar(0, total)}`);
         
         for (let i = 0; i < total; i++) {
             if (!isProcessing) break;
@@ -171,40 +187,50 @@ bot.onText(/\/jalan/, async (msg) => {
             let selectedTemplate = (i % 2 === 0) ? script1 : script2;
             let currentIdx = i + 1;
 
-            // --- RITME NINJA EXTREME ---
+            // --- LOGIKA RITME NINJA SENDER ---
             if (currentIdx <= 6) {
                 await delay(1000); // Pemanasan
             } 
-            
-            // Jeda Napas setiap 100 chat untuk bypass deteksi AI terbaru
+
+            // SAFETY BREAK: Setiap 100 chat, istirahat 5 detik agar Railway & WA tidak crash
             if (currentIdx % 100 === 0) {
-                await bot.sendMessage(chatId, `💤 **Jeda 5 detik (Siklus ${currentIdx})**`);
+                await bot.sendMessage(chatId, `💤 **Siklus 100 chat tercapai. Jeda 5 detik...**`);
                 await delay(5000);
             } else if (currentIdx === 71) {
-                await delay(3000); 
+                await bot.sendMessage(chatId, "⏳ *Jeda Istirahat 3 Detik (Ninja Break)...*");
+                await delay(3000);
             }
 
             try {
-                // Tambahkan karakter invisible unik di akhir pesan
+                // Menambahkan karakter invisible di akhir pesan agar AI WA bingung membaca kemiripan pesan
                 const pesan = selectedTemplate.replace(/{id}/g, nama) + generateUniqueInvis();
                 
                 await sock.sendPresenceUpdate('composing', jid);
-                if (currentIdx > 6) await delay(20); // Jeda tipis agar Railway stabil
+                
+                // Jeda mikroskopis 20ms agar proses send tidak tabrakan di Railway
+                if (currentIdx > 6) await delay(20); 
                 
                 await sock.sendMessage(jid, { text: pesan });
                 successCount++;
 
-                if (successCount % 10 === 0 || successCount === total) {
+                if (successCount % 5 === 0 || successCount === total) {
                     await bot.editMessageText(`🚀 **NINJA BLAST: ${successCount}/${total}**\n${createProgressBar(successCount, total)}`, {
                         chat_id: chatId,
                         message_id: progressMsg.message_id
                     }).catch(() => {});
                 }
-            } catch (err) { continue; }
+                
+            } catch (err) {
+                console.log(`Gagal ke ${jid}`);
+                continue; 
+            }
         }
-        bot.sendMessage(chatId, `🏁 **MISI 1000+ SELESAI!**\nBerhasil: ${successCount}`);
+        bot.sendMessage(chatId, `🏁 **MISI SELESAI!**\nBerhasil: ${successCount}\nSemoga tembus BADAK! 🦏`);
         isProcessing = false;
-    } catch (e) { bot.sendMessage(chatId, "❌ File script1.txt/script2.txt belum ada!"); isProcessing = false; }
+    } catch (e) { 
+        bot.sendMessage(chatId, "❌ Gagal membaca file script1.txt atau script2.txt."); 
+        isProcessing = false; 
+    }
 });
 
 bot.onText(/\/restart/, async (msg) => {
@@ -215,7 +241,9 @@ bot.onText(/\/restart/, async (msg) => {
     if (sock) { try { await sock.logout(); } catch (e) {} sock.end(); }
     setTimeout(() => {
         if (fs.existsSync('./session_data')) fs.rmSync('./session_data', { recursive: true, force: true });
-        bot.sendMessage(chatId, "✅ **READY.** Silahkan `/login`.");
+        bot.sendMessage(chatId, welcomeMessage).then(() => {
+            bot.sendMessage(chatId, "✅ **READY.** Silahkan `/login`.");
+        });
         sock = null; 
     }, 2000);
 });
