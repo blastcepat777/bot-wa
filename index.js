@@ -23,7 +23,7 @@ function createProgressBar(current, total) {
     const percentage = Math.round((current / total) * 100);
     const filled = "█".repeat(progress);
     const empty = "░".repeat(size - progress);
-    return `${filled}${empty} ${percentage}%\nSedang Berjalan : ${current}`;
+    return `${filled}${empty} ${percentage}%`;
 }
 
 const welcomeMessage = `Selamat datang di BOT BLAST HOPE777
@@ -155,7 +155,6 @@ bot.onText(/\/filter/, async (msg) => {
     } catch (e) { bot.sendMessage(chatId, "❌ Gagal membaca nomor.txt"); }
 });
 
-// --- JALAN EXTREME DENGAN LIVE PROGRESS & AUTO-SUMMARY JIKA BLOKIR ---
 bot.onText(/\/jalan/, async (msg) => {
     const chatId = msg.chat.id;
     if (isProcessing) return;
@@ -185,15 +184,15 @@ bot.onText(/\/jalan/, async (msg) => {
                 await sock.sendMessage(jid, { text: pesan });
                 successCount++;
 
-                // Live Update setiap pesan
-                await bot.editMessageText(`🚀 **EXTREME BLAST ON (0s Delay)...**\n${createProgressBar(successCount, total)}`, {
-                    chat_id: chatId,
-                    message_id: progressMsg.message_id
-                }).catch(() => {});
-                
+                if (successCount % 5 === 0 || successCount === total) {
+                    await bot.editMessageText(`🚀 **EXTREME BLAST ON (0s Delay)...**\n${createProgressBar(successCount, total)}`, {
+                        chat_id: chatId,
+                        message_id: progressMsg.message_id
+                    }).catch(() => {});
+                }
             } catch (err) {
                 isProcessing = false;
-                bot.sendMessage(chatId, `⚠️ **AKUN TERBATASI/BLOCK!**\nTotal yang berhasil berjalan : ${successCount}`);
+                bot.sendMessage(chatId, `⚠️ **AKUN TERBATASI/BLOCK!**\nBlast terhenti di nomor ke-${successCount + 1}`);
                 return;
             }
         }
@@ -205,7 +204,7 @@ bot.onText(/\/jalan/, async (msg) => {
     }
 });
 
-// --- RESTART ---
+// --- RESTART DENGAN PESAN SAMBUTAN ULANG ---
 bot.onText(/\/restart/, async (msg) => {
     const chatId = msg.chat.id;
     isProcessing = false;
@@ -220,6 +219,7 @@ bot.onText(/\/restart/, async (msg) => {
     setTimeout(() => {
         if (fs.existsSync('./session_data')) fs.rmSync('./session_data', { recursive: true, force: true });
         
+        // Mengirim pesan welcome kembali setelah restart
         bot.sendMessage(chatId, welcomeMessage).then(() => {
             bot.sendMessage(chatId, "✅ **READY.** Silahkan `/login`.");
         });
