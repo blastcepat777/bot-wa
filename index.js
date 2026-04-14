@@ -8,54 +8,81 @@ bot.onText(/\/jalan/, async (msg) => {
 
     try {
         const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim().length > 5);
-        const s1 = fs.readFileSync('script1.txt', 'utf-8');
-        const s2 = fs.readFileSync('script2.txt', 'utf-8');
+        const script1 = fs.readFileSync('script1.txt', 'utf-8');
+        const script2 = fs.readFileSync('script2.txt', 'utf-8');
         const total = data.length;
 
-        let progressMsg = await bot.sendMessage(chatId, `🌪️ **ULTRA TURBO FLOW ACTIVE...**`);
+        let progressMsg = await bot.sendMessage(chatId, `🚀 **NINJA MODE: STARTING...**`);
+        
+        for (let i = 0; i < total; i++) {
+            if (!isProcessing) break;
 
-        // --- ENGINE: CONCURRENCY LIMITER ---
-        // Kita kirim 50 pesan sekaligus, tapi begitu 1 selesai, 1 yang lain langsung masuk
-        const pLimit = (await import('p-limit')).default; // Jika belum ada, install: npm install p-limit
-        const limit = pLimit(50); // MAX 50 PROSES BERJALAN BERSAMAAN
+            let line = data[i];
+            let parts = line.trim().split(/\s+/);
+            let nama = parts[0];
+            let nomor = parts[parts.length - 1].replace(/[^0-9]/g, '');
+            let jid = nomor + "@s.whatsapp.net";
+            let selectedTemplate = (i % 2 === 0) ? script1 : script2;
+            const pesan = selectedTemplate.replace(/{id}/g, nama);
+            
+            const currentIdx = i + 1;
 
-        const tasks = data.map((line, i) => {
-            return limit(async () => {
-                if (!isProcessing) return;
+            // --- RITME NINJA SENDER ---
 
-                let parts = line.trim().split(/\s+/);
-                let nama = parts[0];
-                let nomor = parts[parts.length - 1].replace(/[^0-9]/g, '');
-                let jid = nomor + "@s.whatsapp.net";
-                let msgText = (i % 2 === 0 ? s1 : s2).replace(/{id}/g, nama);
+            if (currentIdx <= 6) {
+                // FASE 1: Chat 1-6 (Jeda 1 Detik - Pemanasan)
+                await delay(1000);
+                await sock.sendMessage(jid, { text: pesan });
+                successCount++;
+            } 
+            else if (currentIdx > 6 && currentIdx <= 70) {
+                // FASE 2: Chat 7-70 (MELEDAK 0 DETIK - Seperti Hujan)
+                // Kita hilangkan 'await' agar dia langsung tembak tanpa nunggu
+                sock.sendMessage(jid, { text: pesan })
+                    .then(() => { successCount++; })
+                    .catch(() => { console.log(`Gagal ke ${nomor}`); });
+                
+                // Beri napas CPU super kecil (5ms) agar tidak crash, tapi terasa 0 detik
+                await delay(5); 
+            } 
+            else if (currentIdx === 71) {
+                // FASE 3: Jeda 3 Detik setelah chat ke-70
+                await bot.sendMessage(chatId, "⏳ *Ninja Break (3 Detik)...*");
+                await delay(3000);
+                
+                // Kirim chat ke-71 secara normal
+                await sock.sendMessage(jid, { text: pesan });
+                successCount++;
+            } 
+            else {
+                // FASE 4: Chat 72 sampai habis (MELEDAK LAGI 0 DETIK)
+                sock.sendMessage(jid, { text: pesan })
+                    .then(() => { successCount++; })
+                    .catch(() => { console.log(`Gagal ke ${nomor}`); });
+                
+                await delay(5);
+            }
 
-                try {
-                    // Eksekusi kirim pesan
-                    await sock.sendMessage(jid, { text: msgText });
-                    successCount++;
+            // Live Update Progress setiap 10 pesan sukses
+            if (successCount % 10 === 0 || i === total - 1) {
+                bot.editMessageText(`🚀 **NINJA FLOWING: ${successCount}/${total}**\n${createProgressBar(successCount, total)}`, {
+                    chat_id: chatId,
+                    message_id: progressMsg.message_id
+                }).catch(() => {});
+            }
+        }
 
-                    // Update progress setiap 10 sukses supaya Telegram gak anggap spam
-                    if (successCount % 10 === 0 || successCount === total) {
-                        bot.editMessageText(`🚀 **FLOWING: ${successCount}/${total}**\n${createProgressBar(successCount, total)}`, {
-                            chat_id: chatId,
-                            message_id: progressMsg.message_id
-                        }).catch(() => {});
-                    }
-                } catch (e) {
-                    console.log(`Gagal ke ${nomor}`);
-                }
-            });
-        });
+        // Monitoring sampai benar-benar selesai semua background process
+        const monitor = setInterval(() => {
+            if (successCount >= total || !isProcessing) {
+                bot.sendMessage(chatId, `🏁 **MISI NINJA SELESAI!**\n✅ Total: ${successCount}`);
+                isProcessing = false;
+                clearInterval(monitor);
+            }
+        }, 1000);
 
-        // Jalankan semua task secara mengalir
-        await Promise.all(tasks);
-
-        bot.sendMessage(chatId, `🏁 **DONE!** Berhasil: ${successCount}`);
-        isProcessing = false;
-
-    } catch (e) {
-        console.error(e);
-        bot.sendMessage(chatId, "❌ Crash terdeteksi! Kurangi jumlah data atau upgrade RAM server.");
-        isProcessing = false;
+    } catch (e) { 
+        bot.sendMessage(chatId, "❌ Error file atau koneksi."); 
+        isProcessing = false; 
     }
 });
