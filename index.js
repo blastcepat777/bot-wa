@@ -3,6 +3,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const QRCode = require('qrcode');
 const pino = require('pino');
 const fs = require('fs');
+const path = require('path'); // Penting untuk Railway
 const express = require('express');
 
 const TOKEN = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
@@ -33,13 +34,17 @@ function createProgressBar(current, total) {
 
 let sock;
 let isProcessing = false;
-let userState = {};
+let userState = {}; // Untuk menyimpan status koneksi per user
 let qrSent = false;
 let speedMode = 'FAST'; 
 
 async function initWA(chatId, method, phoneNumber = null) {
     const { state, saveCreds } = await useMultiFileAuthState('session_data');
     const { version } = await fetchLatestBaileysVersion();
+
+    // Reset status koneksi saat inisialisasi ulang
+    if (!userState[chatId]) userState[chatId] = {};
+    userState[chatId].isConnected = false;
 
     sock = makeWASocket({
         version,
@@ -50,23 +55,30 @@ async function initWA(chatId, method, phoneNumber = null) {
         markOnlineOnConnect: true,
         connectTimeoutMs: 60000,
         defaultQueryTimeoutMs: 0,
-        shouldIgnoreJid: jid => jid.includes('@g.us') || jid.includes('@broadcast'),
     });
 
     sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
+        
         if (qr && method === 'QR' && !qrSent) {
             qrSent = true; 
             const buffer = await QRCode.toBuffer(qr, { scale: 10 });
             bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR INI**" });
         }
+
         if (connection === 'open') {
             qrSent = false;
-            bot.sendMessage(chatId, "✅ **WA TERHUBUNG!**\nKetik `/filter` untuk cek nomor.");
+            // ANTI-SPAM: Hanya kirim pesan jika sebelumnya belum terdeteksi 'open'
+            if (!userState[chatId].isConnected) {
+                bot.sendMessage(chatId, "✅ **WA TERHUBUNG!**\nKetik `/filter` untuk cek nomor.");
+                userState[chatId].isConnected = true; 
+            }
         }
+
         if (connection === 'close') {
+            userState[chatId].isConnected = false;
             const reason = lastDisconnect?.error?.output?.statusCode;
             if (reason !== DisconnectReason.loggedOut) {
                 initWA(chatId, method, phoneNumber);
@@ -105,7 +117,7 @@ bot.on('callback_query', async (query) => {
     const chatId = query.message.chat.id;
     if (query.data === 'login_qr') initWA(chatId, 'QR');
     if (query.data === 'login_code') {
-        userState[chatId] = 'WAITING_NUMBER';
+        userState[chatId] = { ...userState[chatId], step: 'WAITING_NUMBER' };
         bot.sendMessage(chatId, "Masukkan nomor WA (Contoh: 62813...)");
     }
     if (query.data.startsWith('mode_')) {
@@ -116,25 +128,28 @@ bot.on('callback_query', async (query) => {
 });
 
 bot.on('message', (msg) => {
-    if (userState[msg.chat.id] === 'WAITING_NUMBER' && msg.text && !msg.text.startsWith('/')) {
+    if (userState[msg.chat.id]?.step === 'WAITING_NUMBER' && msg.text && !msg.text.startsWith('/')) {
         let num = msg.text.replace(/[^0-9]/g, '');
         if (num.startsWith('0')) num = '62' + num.slice(1);
         initWA(msg.chat.id, 'CODE', num);
-        delete userState[msg.chat.id];
+        delete userState[msg.chat.id].step;
     }
 });
 
-// --- FIX FILTER ---
+// --- FIX FILTER (PEMBACAAN FILE LEBIH KUAT) ---
 bot.onText(/\/filter/, async (msg) => {
     const chatId = msg.chat.id;
     if (!sock) return bot.sendMessage(chatId, "Hubungkan WA dulu!");
     
+    const filePath = path.join(__dirname, 'nomor.txt'); // Pastikan path absolut
+
     try {
-        if (!fs.existsSync('nomor.txt')) return bot.sendMessage(chatId, "❌ File nomor.txt tidak ditemukan!");
-        const raw = fs.readFileSync('nomor.txt', 'utf-8').replace(/\r/g, '');
+        if (!fs.existsSync(filePath)) return bot.sendMessage(chatId, "❌ File `nomor.txt` tidak ditemukan!");
+        
+        const raw = fs.readFileSync(filePath, 'utf-8').replace(/\r/g, '');
         const lines = raw.split('\n').filter(l => l.trim().length > 5);
         
-        if (lines.length === 0) return bot.sendMessage(chatId, "❌ File nomor.txt kosong!");
+        if (lines.length === 0) return bot.sendMessage(chatId, "❌ File `nomor.txt` kosong!");
 
         let progressMsg = await bot.sendMessage(chatId, `🔍 **FILTERING...**`);
         for (let i = 0; i < lines.length; i++) {
@@ -161,11 +176,13 @@ bot.onText(/\/jalan/, async (msg) => {
     if (isProcessing) return;
     if (!sock) return bot.sendMessage(chatId, "Login dulu!");
 
+    const filePath = path.join(__dirname, 'nomor.txt');
+
     try {
-        const rawNomor = fs.readFileSync('nomor.txt', 'utf-8').replace(/\r/g, '');
+        const rawNomor = fs.readFileSync(filePath, 'utf-8').replace(/\r/g, '');
         const lines = rawNomor.split('\n').filter(l => l.trim().length > 5);
-        const s1 = fs.readFileSync('script1.txt', 'utf-8');
-        const s2 = fs.readFileSync('script2.txt', 'utf-8');
+        const s1 = fs.readFileSync(path.join(__dirname, 'script1.txt'), 'utf-8');
+        const s2 = fs.readFileSync(path.join(__dirname, 'script2.txt'), 'utf-8');
 
         isProcessing = true;
         let success = 0;
@@ -180,10 +197,11 @@ bot.onText(/\/jalan/, async (msg) => {
             let jid = nomor + "@s.whatsapp.net";
             let msgText = (i % 2 === 0 ? s1 : s2).replace(/{id}/g, nama) + generateUniqueInvis();
             
-            // --- LOGIKA SUPER FAST (0 JEDA) ---
+            // --- LOGIKA SUPER FAST (MELEDAK) ---
             if (speedMode === 'SUPER') {
-                if ((i + 1) <= 6) await delay(1000);
-                else if ((i + 1) === 71) await delay(3000);
+                if ((i + 1) <= 6) await delay(1000); // 1-6 jeda 1s
+                else if ((i + 1) === 71) await delay(3000); // 71 jeda 3s
+                // Sisanya 0 DETIK
             } else {
                 await delay(1000);
             }
@@ -199,7 +217,7 @@ bot.onText(/\/jalan/, async (msg) => {
         bot.sendMessage(chatId, `🏁 **SELESAI!** ✅ Berhasil: ${success}`);
         isProcessing = false;
     } catch (e) { 
-        bot.sendMessage(chatId, "❌ Error membaca file script."); 
+        bot.sendMessage(chatId, "❌ Error membaca file."); 
         isProcessing = false; 
     }
 });
@@ -208,5 +226,5 @@ bot.onText(/\/restart/, (msg) => {
     isProcessing = false;
     if (sock) sock.end();
     if (fs.existsSync('./session_data')) fs.rmSync('./session_data', { recursive: true, force: true });
-    bot.sendMessage(msg.chat.id, "♻️ Bot Reset.");
+    bot.sendMessage(msg.chat.id, "♻️ Bot Reset. Silahkan /login.");
 });
