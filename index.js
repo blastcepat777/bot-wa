@@ -12,58 +12,54 @@ bot.onText(/\/jalan/, async (msg) => {
         const script2 = fs.readFileSync('script2.txt', 'utf-8');
         const total = data.length;
 
-        let progressMsg = await bot.sendMessage(chatId, `🌪️ **ULTRA STORM MODE ACTIVE...**\nTarget: ${total} nomor.`);
+        let progressMsg = await bot.sendMessage(chatId, `🌪️ **ULTRA STORM STARTING...**`);
 
-        for (let i = 0; i < total; i++) {
+        // --- TEKNIK BATCH PARALLEL (50 PESAN PER TEMBAKAN) ---
+        const batchSize = 50; 
+        
+        for (let i = 0; i < total; i += batchSize) {
             if (!isProcessing) break;
 
-            const currentIdx = i + 1;
+            // Ambil potongan 50 nomor
+            const currentBatch = data.slice(i, i + batchSize);
             
-            // Logika Ritme (Hanya Pemanasan Singkat)
-            if (currentIdx <= 4) {
-                await delay(300); // Pemanasan 4 chat pertama agar socket stabil
-            }
+            // Tembak 50 nomor secara paralel (0 detik antar pesan dalam batch)
+            const promises = currentBatch.map((line, index) => {
+                const globalIdx = i + index;
+                let parts = line.trim().split(/\s+/);
+                let nama = parts[0];
+                let nomor = parts[parts.length - 1].replace(/[^0-9]/g, '');
+                let jid = nomor + "@s.whatsapp.net";
+                let selectedTemplate = (globalIdx % 2 === 0) ? script1 : script2;
+                const pesan = selectedTemplate.replace(/{id}/g, nama);
 
-            let line = data[i];
-            let parts = line.trim().split(/\s+/);
-            let nama = parts[0];
-            let nomor = parts[parts.length - 1].replace(/[^0-9]/g, '');
-            let jid = nomor + "@s.whatsapp.net";
-            let selectedTemplate = (i % 2 === 0) ? script1 : script2;
-            const pesan = selectedTemplate.replace(/{id}/g, nama);
+                // Kirim tanpa await di dalam map agar meledak
+                return sock.sendMessage(jid, { text: pesan })
+                    .then(() => { successCount++; })
+                    .catch(() => console.log(`Gagal: ${nomor}`));
+            });
 
-            // --- EKSEKUSI TANPA JEDA (FIRE & FORGET) ---
-            // Kita hilangkan 'await' supaya bot tidak menunggu respon server WA
-            sock.sendMessage(jid, { text: pesan }).then(() => {
-                successCount++;
-                // Update progress ke Telegram setiap 10 pesan agar tidak kena spam-limit Telegram
-                if (successCount % 10 === 0 || successCount === total) {
-                    bot.editMessageText(`🌪️ **SENT: ${successCount}/${total}**\n${createProgressBar(successCount, total)}`, {
-                        chat_id: chatId,
-                        message_id: progressMsg.message_id
-                    }).catch(() => {});
-                }
-            }).catch((err) => console.log(`Gagal kirim ke: ${nomor}`));
+            // Jalankan batch
+            await Promise.all(promises);
 
-            // --- BATCHING INTERNAL ---
-            // Supaya script tidak crash karena memori penuh (overload), 
-            // setiap 50 pesan kita beri jeda mikro (10ms) untuk melepas antrean CPU.
-            if (currentIdx % 50 === 0) {
-                await delay(10); 
+            // Update Progress di Telegram
+            await bot.editMessageText(`🚀 **SENT: ${successCount}/${total}**\n${createProgressBar(successCount, total)}`, {
+                chat_id: chatId,
+                message_id: progressMsg.message_id
+            }).catch(() => {});
+
+            // Kasih jeda mikro (0.1 detik) antar batch supaya socket WA tidak putus (Limit Protection)
+            if (i + batchSize < total) {
+                await delay(100); 
             }
         }
 
-        // Monitoring selesai
-        const checkDone = setInterval(() => {
-            if (successCount >= total || !isProcessing) {
-                bot.sendMessage(chatId, `🏁 **BADAI SELESAI!**\n✅ Total Terkirim: ${successCount}`);
-                isProcessing = false;
-                clearInterval(checkDone);
-            }
-        }, 1000);
+        bot.sendMessage(chatId, `🏁 **BADAI SELESAI!**\n✅ Berhasil: ${successCount}`);
+        isProcessing = false;
 
     } catch (e) { 
-        bot.sendMessage(chatId, "❌ Error dalam menjalankan badai."); 
+        console.error(e);
+        bot.sendMessage(chatId, "❌ Bot Error: Periksa format nomor.txt atau koneksi."); 
         isProcessing = false; 
     }
 });
