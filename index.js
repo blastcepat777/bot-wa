@@ -11,7 +11,7 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 // --- WEB SERVER ---
 const app = express();
 const PORT = process.env.PORT || 3000;
-app.get('/', (req, res) => res.send('Bot Ninja Online!'));
+app.get('/', (req, res) => res.send('Bot Ninja Stealth Mode Online!'));
 app.listen(PORT, '0.0.0.0', () => console.log(`Server port ${PORT}`));
 
 // --- HELPERS ---
@@ -38,7 +38,7 @@ let userState = {};
 let qrSent = false;
 let speedMode = 'FAST'; 
 
-// --- INITIALIZE WA ---
+// --- INITIALIZE WA (STEALTH CONFIG) ---
 async function initWA(chatId, method, phoneNumber = null) {
     const { state, saveCreds } = await useMultiFileAuthState('session_data');
     const { version } = await fetchLatestBaileysVersion();
@@ -47,10 +47,15 @@ async function initWA(chatId, method, phoneNumber = null) {
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
-        browser: ["Ubuntu", "Chrome", "20.0.04"],
-        syncFullHistory: false,
+        // --- PENYAMARAN SISTEM (STEALTH) ---
+        // Meniru macOS dengan Chrome versi terbaru agar tidak terbaca sebagai server Linux/Ubuntu
+        browser: ["Mac OS", "Chrome", "122.0.6261.129"], 
+        syncFullHistory: false, // Jangan sinkron history lama untuk kurangi beban data
+        markOnlineOnConnect: true,
         connectTimeoutMs: 60000,
         defaultQueryTimeoutMs: 0,
+        // Hindari membaca pesan dari grup atau status untuk proteksi limit
+        shouldIgnoreJid: jid => jid.includes('@g.us') || jid.includes('@broadcast'),
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -60,11 +65,11 @@ async function initWA(chatId, method, phoneNumber = null) {
         if (qr && method === 'QR' && !qrSent) {
             qrSent = true; 
             const buffer = await QRCode.toBuffer(qr, { scale: 10 });
-            bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR INI**" });
+            bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR INI (NINJA STEALTH)**" });
         }
         if (connection === 'open') {
             qrSent = false;
-            bot.sendMessage(chatId, "✅ **WA TERHUBUNG!**\nSilahkan ketik `/filter`.");
+            bot.sendMessage(chatId, "✅ **WA TERHUBUNG (STEALTH MODE)!**\nSilahkan ketik `/filter`.");
         }
         if (connection === 'close') {
             const reason = lastDisconnect?.error?.output?.statusCode;
@@ -199,8 +204,11 @@ bot.onText(/\/jalan/, async (msg) => {
             }
 
             try {
+                // Presence update (Typing) membuat pengiriman lebih natural
                 await sock.sendPresenceUpdate('composing', jid);
+                await delay(200); 
                 await sock.sendMessage(jid, { text: msgText });
+                
                 success++;
                 if (success % 2 === 0 || i === lines.length - 1) {
                     bot.editMessageText(`🚀 Proses: ${createProgressBar(success, lines.length)}`, { chat_id: chatId, message_id: progressMsg.message_id }).catch(()=>{});
