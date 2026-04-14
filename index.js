@@ -11,7 +11,7 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 // --- KONFIGURASI WEB SERVER ---
 const app = express();
 const PORT = process.env.PORT || 3000;
-app.get('/', (req, res) => res.send('Bot WA Blast Super Fast is Online!'));
+app.get('/', (req, res) => res.send('Bot WA Blast Extreme Fast is Online!'));
 app.listen(PORT, '0.0.0.0', () => console.log(`Web Server running on port ${PORT}`));
 
 // --- FUNGSI HELPER ---
@@ -117,7 +117,7 @@ bot.on('message', async (msg) => {
     }
 });
 
-// --- FILTER DENGAN JEDA 1 DETIK & PROGRESS BAR ---
+// --- FILTER TETAP 1 DETIK (AGAR TIDAK CRASH SAAT LOAD HISTORY) ---
 bot.onText(/\/filter/, async (msg) => {
     const chatId = msg.chat.id;
     if (!sock) return bot.sendMessage(chatId, "Login dulu!");
@@ -130,11 +130,8 @@ bot.onText(/\/filter/, async (msg) => {
         for (let i = 0; i < total; i++) {
             let num = data[i].trim().split(/\s+/).pop().replace(/[^0-9]/g, '') + "@s.whatsapp.net";
             await sock.sendPresenceUpdate('available', num);
-            
-            // Jeda 1 detik sesuai permintaan
             await delay(1000);
 
-            // Update progress di Telegram setiap 5 nomor (biar gak lemot/kena spam API)
             if ((i + 1) % 5 === 0 || (i + 1) === total) {
                 await bot.editMessageText(`🔍 **PROSES FILTER (Jeda 1s)...**\n${createProgressBar(i + 1, total)}`, {
                     chat_id: chatId,
@@ -146,7 +143,7 @@ bot.onText(/\/filter/, async (msg) => {
     } catch (e) { bot.sendMessage(chatId, "❌ Gagal membaca nomor.txt"); }
 });
 
-// --- JALAN DENGAN PROGRESS BAR ---
+// --- EXTREME MODE /JALAN: 0 DETIK TANPA JEDA ---
 bot.onText(/\/jalan/, async (msg) => {
     const chatId = msg.chat.id;
     if (isProcessing) return;
@@ -159,15 +156,12 @@ bot.onText(/\/jalan/, async (msg) => {
         const script2 = fs.readFileSync('script2.txt', 'utf-8');
         const total = data.length;
 
-        let progressMsg = await bot.sendMessage(chatId, `🚀 **PROSES BLAST...**\n${createProgressBar(0, total)}`);
+        let progressMsg = await bot.sendMessage(chatId, `🚀 **EXTREME BLAST ON (0s Delay)...**\n${createProgressBar(0, total)}`);
         
         for (let i = 0; i < total; i++) {
             if (!isProcessing) break;
 
-            if (i > 0 && i % 50 === 0) {
-                await bot.sendMessage(chatId, `☕ **ISTIRAHAT 45 DETIK...**`);
-                await delay(45000);
-            }
+            // JEDA ISTIRAHAT DIHAPUS - JALAN TERUS SAMPAI BLOCKED
 
             let line = data[i];
             let parts = line.trim().split(/\s+/);
@@ -178,22 +172,26 @@ bot.onText(/\/jalan/, async (msg) => {
 
             try {
                 const pesan = selectedTemplate.replace(/{id}/g, nama);
+                
+                // PENGIRIMAN 0 DETIK
                 await sock.sendMessage(jid, { text: pesan });
+                
                 successCount++;
 
+                // Update progress setiap 5 pesan
                 if (successCount % 5 === 0 || successCount === total) {
-                    await bot.editMessageText(`🚀 **PROSES BLAST...**\n${createProgressBar(successCount, total)}`, {
+                    await bot.editMessageText(`🚀 **EXTREME BLAST ON (0s Delay)...**\n${createProgressBar(successCount, total)}`, {
                         chat_id: chatId,
                         message_id: progressMsg.message_id
                     }).catch(() => {});
                 }
             } catch (err) {
                 isProcessing = false;
-                bot.sendMessage(chatId, `⚠️ **TERBATASI!**`);
+                bot.sendMessage(chatId, `⚠️ **AKUN TERBATASI/BLOCK!**\nBlast terhenti di nomor ke-${successCount + 1}`);
                 return;
             }
         }
-        bot.sendMessage(chatId, `🏁 **SELESAI!** Total: ${successCount}`);
+        bot.sendMessage(chatId, `🏁 **SELESAI!** Akun selamat sampai akhir. Total: ${successCount}`);
         isProcessing = false;
     } catch (e) { 
         bot.sendMessage(chatId, "❌ Error file."); 
