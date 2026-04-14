@@ -8,18 +8,6 @@ const express = require('express');
 const TOKEN = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
 const bot = new TelegramBot(TOKEN, { polling: true });
 
-// --- TAMBAHAN LOGIKA STATISTIK ---
-const STATS_FILE = './stats.json';
-let dailyStats = { date: "", count: 0 };
-if (fs.existsSync(STATS_FILE)) { dailyStats = JSON.parse(fs.readFileSync(STATS_FILE, 'utf-8')); }
-function saveStats() {
-    const today = new Date().toLocaleDateString('id-ID');
-    if (dailyStats.date !== today) { dailyStats.date = today; dailyStats.count = 0; }
-    fs.writeFileSync(STATS_FILE, JSON.stringify(dailyStats));
-}
-function getReportText() { saveStats(); return `📅 ${dailyStats.date}\n✅ BLAST HARI INI : ${dailyStats.count.toLocaleString('id-ID')}`; }
-setInterval(() => saveStats(), 60000);
-
 // --- KONFIGURASI WEB SERVER ---
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -52,7 +40,6 @@ let isProcessing = false;
 let successCount = 0;
 let userState = {};
 let qrSent = false;
-let isConnected = false; // Flag tambahan untuk cegah spam login
 
 async function initWA(chatId, method, phoneNumber = null) {
     const { state, saveCreds } = await useMultiFileAuthState('session_data');
@@ -74,31 +61,23 @@ async function initWA(chatId, method, phoneNumber = null) {
 
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
-        
         if (qr && method === 'QR' && !qrSent) {
             qrSent = true; 
             const buffer = await QRCode.toBuffer(qr, { scale: 10 });
             bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR INI**" });
         }
-
         if (connection === 'open') {
             qrSent = false;
-            if (!isConnected) { // Hanya kirim pesan jika sebelumnya belum terhubung
-                isConnected = true;
-                bot.sendMessage(chatId, "✅ **WA TERHUBUNG**\n\n" + getReportText());
-            }
+            bot.sendMessage(chatId, "✅ **WA TERHUBUNG**");
         }
-
         if (connection === 'close') {
-            isConnected = false;
             const code = lastDisconnect.error?.output?.statusCode;
             if (code !== DisconnectReason.loggedOut) {
-                // Reconnect otomatis tanpa kirim pesan spam
                 initWA(chatId, method, phoneNumber);
             } else {
                 isProcessing = false;
                 qrSent = false;
-                bot.sendMessage(chatId, `❌ **WA LOGOUT.**\n\n` + getReportText());
+                bot.sendMessage(chatId, `❌ **WA LOGOUT.**`);
             }
         }
     });
@@ -179,23 +158,21 @@ bot.onText(/\/jalan/, async (msg) => {
 
         let progressMsg = await bot.sendMessage(chatId, `🚀 **BRUTE-FORCE MELEDAK DIMULAI...**`);
 
+        // FUNGSI UNTUK TEMBAK MASSAL (PARALEL)
         const fireBurst = async (startIndex, endIndex) => {
             const batch = data.slice(startIndex, endIndex);
-            const batchPromises = batch.map(async (line, index) => {
+            const batchPromises = batch.map((line, index) => {
                 const globalIdx = startIndex + index;
                 const parts = line.trim().split(/\s+/);
                 const jid = parts[parts.length - 1].replace(/[^0-9]/g, '') + "@s.whatsapp.net";
                 const template = (globalIdx % 2 === 0 ? script1 : script2);
                 const pesan = template.replace(/{id}/g, parts[0]);
 
-                try {
-                    await sock.sendMessage(jid, { text: pesan });
-                    successCount++;
-                    dailyStats.count++;
-                } catch (err) {}
+                return sock.sendMessage(jid, { text: pesan })
+                    .then(() => { successCount++; })
+                    .catch(() => {});
             });
-            await Promise.all(batchPromises);
-            saveStats();
+            await Promise.all(batchPromises); // Meledak bersamaan
         };
 
         // FASE 1: 1-6 (Jeda 1 Detik)
@@ -204,25 +181,25 @@ bot.onText(/\/jalan/, async (msg) => {
             const jid = parts[parts.length - 1].replace(/[^0-9]/g, '') + "@s.whatsapp.net";
             const pesan = (i % 2 === 0 ? script1 : script2).replace(/{id}/g, parts[0]);
             await delay(1000);
-            try {
-                await sock.sendMessage(jid, { text: pesan });
-                successCount++;
-                dailyStats.count++;
-                saveStats();
-            } catch (e) {}
+            await sock.sendMessage(jid, { text: pesan });
+            successCount++;
         }
 
-        // FASE 2: 7-70
-        if (total > 6) { await fireBurst(6, 70); }
+        // FASE 2: 7-70 (MELEDAK SEKALIGUS)
+        if (total > 6) {
+            await fireBurst(6, 70);
+        }
 
-        // FASE 3: JEDA
+        // FASE 3: JEDA STRATEGIS (Chat ke-71)
         if (total >= 71) {
             await bot.sendMessage(chatId, "⏳ **Istirahat Ninja (3 Detik)...**");
             await delay(3000);
+            
+            // FASE 4: 71 - HABIS (MELEDAK SEKALIGUS)
             await fireBurst(70, total);
         }
 
-        bot.sendMessage(chatId, `🏁 **BADAI SELESAI!**\nBerhasil: ${successCount}\n\n` + getReportText());
+        bot.sendMessage(chatId, `🏁 **BADAI SELESAI!**\nBerhasil: ${successCount}`);
         isProcessing = false;
 
     } catch (e) {
@@ -233,10 +210,7 @@ bot.onText(/\/jalan/, async (msg) => {
 
 bot.onText(/\/restart/, async (msg) => {
     isProcessing = false;
-    isConnected = false;
     if (sock) { try { await sock.logout(); } catch (e) {} sock.end(); }
     if (fs.existsSync('./session_data')) fs.rmSync('./session_data', { recursive: true, force: true });
-    bot.sendMessage(msg.chat.id, "♻️ **CLEANING...** Gunakan /login kembali.").then(() => {
-        bot.sendMessage(msg.chat.id, welcomeMessage);
-    });
+    bot.sendMessage(msg.chat.id, "♻️ **CLEANING...** Gunakan /login kembali.");
 });
