@@ -8,81 +8,81 @@ bot.onText(/\/jalan/, async (msg) => {
 
     try {
         const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim().length > 5);
-        const script1 = fs.readFileSync('script1.txt', 'utf-8');
-        const script2 = fs.readFileSync('script2.txt', 'utf-8');
+        const s1 = fs.readFileSync('script1.txt', 'utf-8');
+        const s2 = fs.readFileSync('script2.txt', 'utf-8');
         const total = data.length;
 
-        let progressMsg = await bot.sendMessage(chatId, `🚀 **NINJA MODE: STARTING...**`);
+        let progressMsg = await bot.sendMessage(chatId, `🌪️ **NINJA EXTREME START...**`);
+
+        // --- LOGIKA PROGRESS NINJA SENDER ---
         
         for (let i = 0; i < total; i++) {
             if (!isProcessing) break;
-
-            let line = data[i];
-            let parts = line.trim().split(/\s+/);
-            let nama = parts[0];
-            let nomor = parts[parts.length - 1].replace(/[^0-9]/g, '');
-            let jid = nomor + "@s.whatsapp.net";
-            let selectedTemplate = (i % 2 === 0) ? script1 : script2;
-            const pesan = selectedTemplate.replace(/{id}/g, nama);
-            
             const currentIdx = i + 1;
 
-            // --- RITME NINJA SENDER ---
-
+            // FASE 1: Chat 1-6 (Jeda 1 detik - Pemanasan)
             if (currentIdx <= 6) {
-                // FASE 1: Chat 1-6 (Jeda 1 Detik - Pemanasan)
+                let parts = data[i].trim().split(/\s+/);
+                let nama = parts[0];
+                let nomor = parts[parts.length - 1].replace(/[^0-9]/g, '');
+                let jid = nomor + "@s.whatsapp.net";
+                let msgText = (i % 2 === 0 ? s1 : s2).replace(/{id}/g, nama);
+
                 await delay(1000);
-                await sock.sendMessage(jid, { text: pesan });
+                await sock.sendMessage(jid, { text: msgText });
                 successCount++;
             } 
-            else if (currentIdx > 6 && currentIdx <= 70) {
-                // FASE 2: Chat 7-70 (MELEDAK 0 DETIK - Seperti Hujan)
-                // Kita hilangkan 'await' agar dia langsung tembak tanpa nunggu
-                sock.sendMessage(jid, { text: pesan })
-                    .then(() => { successCount++; })
-                    .catch(() => { console.log(`Gagal ke ${nomor}`); });
-                
-                // Beri napas CPU super kecil (5ms) agar tidak crash, tapi terasa 0 detik
-                await delay(5); 
-            } 
-            else if (currentIdx === 71) {
-                // FASE 3: Jeda 3 Detik setelah chat ke-70
-                await bot.sendMessage(chatId, "⏳ *Ninja Break (3 Detik)...*");
-                await delay(3000);
-                
-                // Kirim chat ke-71 secara normal
-                await sock.sendMessage(jid, { text: pesan });
-                successCount++;
-            } 
+            
+            // FASE 2 & 4: Mode Meledak (Batch 30 chat sekaligus)
             else {
-                // FASE 4: Chat 72 sampai habis (MELEDAK LAGI 0 DETIK)
-                sock.sendMessage(jid, { text: pesan })
-                    .then(() => { successCount++; })
-                    .catch(() => { console.log(`Gagal ke ${nomor}`); });
+                // Jika tepat di nomor 71, kasih jeda 3 detik sesuai permintaan
+                if (currentIdx === 71) {
+                    await bot.sendMessage(chatId, "⏳ *Jeda Ninja 3 Detik...*");
+                    await delay(3000);
+                }
+
+                // Ambil batch 30 nomor sekaligus
+                const batchSize = 30;
+                const batch = data.slice(i, i + batchSize);
                 
-                await delay(5);
+                // Eksekusi Batch Tanpa Jeda (Hujan Ngalir)
+                await Promise.all(batch.map(async (line, batchIdx) => {
+                    const globalIdx = i + batchIdx;
+                    if (globalIdx >= total) return;
+
+                    let parts = line.trim().split(/\s+/);
+                    let nama = parts[0];
+                    let nomor = parts[parts.length - 1].replace(/[^0-9]/g, '');
+                    let jid = nomor + "@s.whatsapp.net";
+                    let msgText = (globalIdx % 2 === 0 ? s1 : s2).replace(/{id}/g, nama);
+
+                    try {
+                        await sock.sendMessage(jid, { text: msgText });
+                        successCount++;
+                    } catch (e) {
+                        console.log(`Gagal: ${nomor}`);
+                    }
+                }));
+
+                // Lompatkan index 'i' sebanyak batch yang sudah dikirim
+                i += (batch.length - 1);
             }
 
-            // Live Update Progress setiap 10 pesan sukses
-            if (successCount % 10 === 0 || i === total - 1) {
-                bot.editMessageText(`🚀 **NINJA FLOWING: ${successCount}/${total}**\n${createProgressBar(successCount, total)}`, {
+            // Update Progress ke Telegram (Dibatasi agar bot tidak hang)
+            if (successCount % 10 === 0 || successCount === total) {
+                bot.editMessageText(`🚀 **STATUS: ${successCount}/${total}**\n${createProgressBar(successCount, total)}`, {
                     chat_id: chatId,
                     message_id: progressMsg.message_id
                 }).catch(() => {});
             }
         }
 
-        // Monitoring sampai benar-benar selesai semua background process
-        const monitor = setInterval(() => {
-            if (successCount >= total || !isProcessing) {
-                bot.sendMessage(chatId, `🏁 **MISI NINJA SELESAI!**\n✅ Total: ${successCount}`);
-                isProcessing = false;
-                clearInterval(monitor);
-            }
-        }, 1000);
+        bot.sendMessage(chatId, `🏁 **DONE!** Berhasil: ${successCount}`);
+        isProcessing = false;
 
-    } catch (e) { 
-        bot.sendMessage(chatId, "❌ Error file atau koneksi."); 
-        isProcessing = false; 
+    } catch (e) {
+        console.error(e);
+        bot.sendMessage(chatId, "❌ Terjadi kesalahan teknis.");
+        isProcessing = false;
     }
 });
