@@ -47,7 +47,7 @@ async function initWA(chatId, method, phoneNumber = null) {
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
-        browser: ["Ubuntu", "Chrome", "20.0.04"], // Lebih stabil untuk Railway/Linux
+        browser: ["Ubuntu", "Chrome", "20.0.04"],
         syncFullHistory: false,
         connectTimeoutMs: 60000,
         defaultQueryTimeoutMs: 0,
@@ -97,6 +97,16 @@ bot.onText(/\/login/, (msg) => {
     qrSent = false;
     const opts = { reply_markup: { inline_keyboard: [[{ text: "SCAN QR", callback_data: 'login_qr' }, { text: "CODE", callback_data: 'login_code' }]] } };
     bot.sendMessage(msg.chat.id, "Metode Login:", opts);
+});
+
+// Fitur Stop Blast
+bot.onText(/\/stop/, (msg) => {
+    if (isProcessing) {
+        isProcessing = false;
+        bot.sendMessage(msg.chat.id, "🛑 **BLAST DIHENTIKAN PAKSA!**");
+    } else {
+        bot.sendMessage(msg.chat.id, "⚠️ Tidak ada proses blast yang sedang berjalan.");
+    }
 });
 
 bot.on('callback_query', async (query) => {
@@ -160,7 +170,7 @@ bot.onText(/\/filter/, async (msg) => {
 // --- JALAN ---
 bot.onText(/\/jalan/, async (msg) => {
     const chatId = msg.chat.id;
-    if (isProcessing) return;
+    if (isProcessing) return bot.sendMessage(chatId, "⚠️ Blast sedang berjalan! Gunakan /stop untuk berhenti.");
     if (!sock) return bot.sendMessage(chatId, "Login dulu!");
 
     try {
@@ -170,10 +180,10 @@ bot.onText(/\/jalan/, async (msg) => {
 
         isProcessing = true;
         let success = 0;
-        let progressMsg = await bot.sendMessage(chatId, `🚀 Start Blast...`);
+        let progressMsg = await bot.sendMessage(chatId, `🚀 **START BLASTING...**\nKetik /stop untuk berhenti.`);
         
         for (let i = 0; i < lines.length; i++) {
-            if (!isProcessing) break;
+            if (!isProcessing) break; // Cek status stop di setiap loop
             
             let parts = lines[i].trim().split(/\s+/);
             let nama = parts[0];
@@ -189,14 +199,20 @@ bot.onText(/\/jalan/, async (msg) => {
                 await sock.sendPresenceUpdate('composing', jid);
                 await sock.sendMessage(jid, { text: msgText });
                 success++;
-                if (success % 2 === 0) {
+                if (success % 2 === 0 || i === lines.length - 1) {
                     bot.editMessageText(`🚀 Proses: ${createProgressBar(success, lines.length)}`, { chat_id: chatId, message_id: progressMsg.message_id }).catch(()=>{});
                 }
             } catch (e) { console.log("Gagal: " + nomor); }
         }
-        bot.sendMessage(chatId, `🏁 Selesai! Berhasil: ${success}`);
+
+        if (isProcessing) {
+            bot.sendMessage(chatId, `🏁 **MISI SELESAI!**\n✅ Berhasil: ${success}\n🦏 SEMOGA JP BADAK!`);
+        }
         isProcessing = false;
-    } catch (e) { bot.sendMessage(chatId, "❌ Script error."); isProcessing = false; }
+    } catch (e) { 
+        bot.sendMessage(chatId, "❌ Script error."); 
+        isProcessing = false; 
+    }
 });
 
 bot.onText(/\/restart/, (msg) => {
