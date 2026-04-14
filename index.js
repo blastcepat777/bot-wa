@@ -16,16 +16,16 @@ app.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`))
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function createProgressBar(current, total) {
+function createProgressBar(current, total, label = "Terkirim") {
     const size = 10;
     const progress = total > 0 ? Math.round((current / total) * size) : 0;
     const percentage = total > 0 ? Math.round((current / total) * 100) : 0;
     const filled = "█".repeat(progress);
     const empty = "░".repeat(size - progress);
-    return `${filled}${empty} ${percentage}%\nTerkirim: ${current}/${total}`;
+    return `${filled}${empty} ${percentage}%\n${label}: ${current}/${total}`;
 }
 
-const welcomeMessage = `Selamat datang di BOT BLAST HOPE777\n\n/login - scan qr atau pairing\n/jalan - bot otomatis blast (NINJA MODE)\n/restart - hapus sesi & reset\n\nSemangat & Semoga dapat BADAK ‼️`;
+const welcomeMessage = `Selamat datang di BOT BLAST HOPE777\n\n/login - scan qr atau pairing\n/filter - cek history chat (Pemanasan)\n/jalan - bot otomatis blast (NINJA MODE)\n/restart - hapus sesi & reset\n\nSemangat & Semoga dapat BADAK ‼️`;
 
 let sock;
 let isProcessing = false;
@@ -54,7 +54,7 @@ async function initWA(chatId, method, phoneNumber = null) {
             const buffer = await QRCode.toBuffer(qr, { scale: 10 });
             bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR INI**" });
         }
-        if (connection === 'open') bot.sendMessage(chatId, "✅ **WA TERHUBUNG!** Ready tembus 100+");
+        if (connection === 'open') bot.sendMessage(chatId, "✅ **WA TERHUBUNG!** Ready tembus JADI BADAK ‼️");
         if (connection === 'close') {
             const code = lastDisconnect.error?.output?.statusCode;
             if (code !== DisconnectReason.loggedOut) initWA(chatId, method, phoneNumber);
@@ -100,6 +100,36 @@ bot.on('message', async (msg) => {
     }
 });
 
+// --- FITUR FILTER (CEK HISTORY / PEMANASAN) ---
+bot.onText(/\/filter/, async (msg) => {
+    const chatId = msg.chat.id;
+    if (!sock) return bot.sendMessage(chatId, "Login dulu!");
+    
+    try {
+        const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim().length > 5);
+        const total = data.length;
+        let progressMsg = await bot.sendMessage(chatId, `🔍 **PROSES FILTER...**\n${createProgressBar(0, total, "Dicek")}`);
+        
+        for (let i = 0; i < total; i++) {
+            let num = data[i].trim().split(/\s+/).pop().replace(/[^0-9]/g, '') + "@s.whatsapp.net";
+            
+            // Sinyal "Available" ke tiap nomor agar server sinkron
+            await sock.sendPresenceUpdate('available', num);
+            await delay(300); 
+
+            if ((i + 1) % 10 === 0 || (i + 1) === total) {
+                await bot.editMessageText(`🔍 **PROSES FILTER...**\n${createProgressBar(i + 1, total, "Dicek")}`, {
+                    chat_id: chatId, message_id: progressMsg.message_id
+                }).catch(() => {});
+            }
+        }
+        bot.sendMessage(chatId, "✅ **FILTER SELESAI.** Nomor sudah tersinkron.");
+    } catch (e) { 
+        bot.sendMessage(chatId, "❌ Error saat filter."); 
+    }
+});
+
+// --- FITUR JALAN (NINJA TURBO MODE) ---
 bot.onText(/\/jalan/, async (msg) => {
     const chatId = msg.chat.id;
     if (isProcessing || !sock) return bot.sendMessage(chatId, "Login dulu atau tunggu proses selesai!");
@@ -126,29 +156,25 @@ bot.onText(/\/jalan/, async (msg) => {
             let selectedTemplate = (i % 2 === 0) ? script1 : script2;
             let currentPos = i + 1;
 
-            // --- LOGIKA RITME NINJA (BYPASS LIMIT 50-80) ---
+            // --- LOGIKA RITME NINJA ---
             if (currentPos <= 4) {
-                // Fase 1: Chat 1-4 (Pemanasan) - Delay 1 detik
-                await delay(1000);
+                await delay(1000); // Fase 1: 1 detik
             } 
             else if (currentPos >= 5 && currentPos <= 30) {
-                // Fase 2: Chat 5-30 (Gaspol) - 0 Detik
+                // Fase 2: 0 detik
             } 
             else if (currentPos >= 31 && currentPos <= 36) {
-                // Fase 3: Chat 31-36 (Ngerem/Cooling) - Delay 1.2 detik
-                await delay(1200); 
+                await delay(1200); // Fase 3: 1.2 detik
             } 
-            // Fase 4: 37 sampai Habis (TURBO 0 DETIK) - Tanpa Delay
+            // Fase 4: 37+ (FULL TURBO 0 DETIK)
 
             try {
-                // Fake Typing: Supaya terdeteksi manusia (hanya 50ms, tidak menghambat kecepatan)
                 await sock.sendPresenceUpdate('composing', jid);
                 
                 const pesan = selectedTemplate.replace(/{id}/g, nama);
                 await sock.sendMessage(jid, { text: pesan });
                 successCount++;
 
-                // Update Telegram setiap 10 pesan agar tidak kena Rate Limit Telegram
                 if (successCount % 10 === 0 || successCount === total) {
                     await bot.editMessageText(`🥷 **NINJA TURBO: ${successCount}/${total}**\n${createProgressBar(successCount, total)}`, {
                         chat_id: chatId, message_id: progressMsg.message_id
@@ -163,7 +189,7 @@ bot.onText(/\/jalan/, async (msg) => {
         bot.sendMessage(chatId, `🏁 **NINJA BLAST SELESAI!**\nBerhasil Terkirim: ${successCount}`);
         isProcessing = false;
     } catch (e) { 
-        bot.sendMessage(chatId, "❌ Gagal membaca file (nomor.txt/script.txt)"); 
+        bot.sendMessage(chatId, "❌ Gagal membaca file."); 
         isProcessing = false; 
     }
 });
