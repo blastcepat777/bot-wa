@@ -8,13 +8,13 @@ const express = require('express');
 const TOKEN = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
 const bot = new TelegramBot(TOKEN, { polling: true });
 
-// --- DATABASE SEDERHANA UNTUK REPORT ---
+// --- DATABASE REPORT ---
 const REPORT_FILE = './daily_report.json';
 function getReport() {
     const today = new Date().toLocaleDateString('id-ID');
     if (!fs.existsSync(REPORT_FILE)) return { date: today, total: 0 };
     let data = JSON.parse(fs.readFileSync(REPORT_FILE));
-    if (data.date !== today) return { date: today, total: 0 }; // Reset jika ganti hari
+    if (data.date !== today) return { date: today, total: 0 };
     return data;
 }
 function updateReport(count) {
@@ -31,7 +31,7 @@ app.listen(process.env.PORT || 3000);
 let sock;
 let isProcessing = false;
 let userState = {};
-let lastMsgId = null; // Untuk update pesan yang sama
+let qrMsgId = null; // KUNCI UTAMA: Melacak ID pesan Barcode
 
 async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
     const { state, saveCreds } = await useMultiFileAuthState('session_data');
@@ -55,17 +55,31 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
     sock.ev.on('connection.update', async (u) => {
         const { connection, qr } = u;
 
+        // --- LOGIKA UPDATE QR DI TEMPAT YANG SAMA ---
         if (qr && method === 'QR') {
             const buffer = await QRCode.toBuffer(qr, { scale: 8 });
-            if (msgToEdit) {
-                // Menghapus pesan pilihan menu dan kirim QR (Telegram tidak bisa edit teks jadi foto)
-                bot.deleteMessage(chatId, msgToEdit);
-                bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR SEKARANG**\n(Berlaku 1 menit)" });
+            
+            // 1. Hapus barcode lama jika ada
+            if (qrMsgId) {
+                await bot.deleteMessage(chatId, qrMsgId).catch(() => {});
             }
+            
+            // 2. Hapus menu pilihan (tombol) saat pertama kali diklik
+            if (msgToEdit && !qrMsgId) {
+                await bot.deleteMessage(chatId, msgToEdit).catch(() => {});
+            }
+
+            // 3. Kirim barcode baru & simpan ID-nya
+            const sentPhoto = await bot.sendPhoto(chatId, buffer, { 
+                caption: `📸 **SCAN QR SEKARANG**\nUpdate: ${new Date().toLocaleTimeString()}\n(Otomatis berganti di sini)` 
+            });
+            qrMsgId = sentPhoto.message_id;
         }
 
         if (connection === 'open') {
-            bot.sendMessage(chatId, "✅ **TERHUBUNG KE WHATSAPP**\nMode Ninja Stealth Aktif.");
+            if (qrMsgId) await bot.deleteMessage(chatId, qrMsgId).catch(() => {});
+            qrMsgId = null;
+            bot.sendMessage(chatId, "✅ **WA TERHUBUNG**\nMode Ninja Stealth Aktif.");
         }
         
         if (connection === 'close') {
@@ -74,17 +88,18 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
         }
     });
 
+    // --- LOGIKA UPDATE KODE PAIRING DI TEMPAT YANG SAMA ---
     if (method === 'CODE' && phoneNumber && !sock.authState.creds.registered) {
         try {
             let code = await sock.requestPairingCode(phoneNumber);
-            const text = `🔑 **KODE PAIRING ANDA:**\n\n\`${code}\`\n\nMasukkan di notifikasi WhatsApp HP Anda.`;
+            const text = `🔑 **KODE PAIRING ANDA:**\n\n\`${code}\`\n\nMasukkan di notifikasi WA HP Anda.`;
             if (msgToEdit) {
                 bot.editMessageText(text, { chat_id: chatId, message_id: msgToEdit, parse_mode: 'Markdown' });
             } else {
                 bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
             }
         } catch (err) {
-            bot.sendMessage(chatId, "❌ Gagal generate kode. Coba lagi.");
+            bot.sendMessage(chatId, "❌ Gagal generate kode.");
         }
     }
 }
@@ -100,6 +115,7 @@ bot.onText(/\/start/, (msg) => {
 });
 
 bot.onText(/\/login/, (msg) => {
+    qrMsgId = null; // Reset tracker QR saat login ulang
     const opts = {
         reply_markup: {
             inline_keyboard: [
@@ -108,7 +124,7 @@ bot.onText(/\/login/, (msg) => {
             ]
         }
     };
-    bot.sendMessage(msg.chat.id, "Pilih metode login (Update di pesan ini):", opts);
+    bot.sendMessage(msg.chat.id, "Pilih metode login:", opts);
 });
 
 bot.on('callback_query', (q) => {
@@ -117,7 +133,7 @@ bot.on('callback_query', (q) => {
     if (q.data === 'l_qr') initWA(chatId, 'QR', null, msgId);
     if (q.data === 'l_cd') {
         userState[chatId] = { step: 'WAIT_NUM', msgId: msgId };
-        bot.editMessageText("📞 **Masukkan Nomor WA Anda:**\n(Contoh: 62812xxx)", { chat_id: chatId, message_id: msgId });
+        bot.editMessageText("📞 **Masukkan Nomor WA Anda:**", { chat_id: chatId, message_id: msgId });
     }
 });
 
@@ -126,8 +142,8 @@ bot.on('message', (msg) => {
     if (userState[chatId]?.step === 'WAIT_NUM' && msg.text && !msg.text.startsWith('/')) {
         const num = msg.text.replace(/[^0-9]/g, '');
         const targetMsgId = userState[chatId].msgId;
-        bot.deleteMessage(chatId, msg.message_id); // Hapus pesan nomor user agar rapi
-        bot.editMessageText("⏳ **Sedang menggenerate kode...**", { chat_id: chatId, message_id: targetMsgId });
+        bot.deleteMessage(chatId, msg.message_id).catch(() => {}); 
+        bot.editMessageText("⏳ **Menggenerate kode...**", { chat_id: chatId, message_id: targetMsgId });
         initWA(chatId, 'CODE', num, targetMsgId);
         delete userState[chatId];
     }
@@ -136,7 +152,7 @@ bot.on('message', (msg) => {
 // --- ENGINE BLAST: 0 DETIK MELEDAK ---
 bot.onText(/\/jalan/, async (msg) => {
     const chatId = msg.chat.id;
-    if (isProcessing || !sock) return bot.sendMessage(chatId, "🔴 Bot sibuk atau belum login!");
+    if (isProcessing || !sock) return bot.sendMessage(chatId, "🔴 Belum login!");
 
     isProcessing = true;
     try {
@@ -144,7 +160,7 @@ bot.onText(/\/jalan/, async (msg) => {
         const s1 = fs.readFileSync('script1.txt', 'utf-8');
         const s2 = fs.readFileSync('script2.txt', 'utf-8');
         
-        bot.sendMessage(chatId, `🌪️ **STORM STARTED!**\nMeledakkan ${data.length} chat tanpa jeda...`);
+        bot.sendMessage(chatId, `🌪️ **STORM STARTED!**\nMeledakkan ${data.length} chat...`);
 
         data.forEach((line, i) => {
             process.nextTick(async () => {
@@ -154,7 +170,6 @@ bot.onText(/\/jalan/, async (msg) => {
 
                 try {
                     await sock.sendPresenceUpdate('composing', jid);
-                    // Manipulasi waktu simulasi di balik layar (Ghosting)
                     setTimeout(async () => {
                         await sock.sendMessage(jid, { text: pesan });
                         await sock.sendPresenceUpdate('paused', jid);
@@ -163,15 +178,14 @@ bot.onText(/\/jalan/, async (msg) => {
             });
         });
 
-        // Update Report
         updateReport(data.length);
         const rep = getReport();
 
-        bot.sendMessage(chatId, `🚀 **BOOM! MELEDAK.**\n\n✅ Berhasil: ${data.length}\n📊 Total Hari Ini: ${rep.total}\n\nSemua chat mendarat di target.`);
+        bot.sendMessage(chatId, `🚀 **BOOM! MELEDAK.**\n\n✅ Berhasil: ${data.length}\n📊 Total Hari Ini: ${rep.total}`);
         setTimeout(() => { isProcessing = false; }, 5000);
 
     } catch (e) {
-        bot.sendMessage(chatId, "❌ Gagal: File nomor.txt / script tidak lengkap.");
+        bot.sendMessage(chatId, "❌ File error.");
         isProcessing = false;
     }
 });
@@ -179,10 +193,9 @@ bot.onText(/\/jalan/, async (msg) => {
 bot.onText(/\/restart/, async (msg) => {
     const rep = getReport();
     const info = `♻️ **SYSTEM RESTARTING...**\n\n` +
-                 `📈 Terakhir Blast: ${rep.date}\n` +
-                 `🏆 Total Chat Terkirim: ${rep.total}\n` +
-                 `Status Sesi: Cleaning data... ${rep.total}\n` +
-                 `Tekan /login untuk blast`;
+                 `📈 Hari Ini: ${rep.date}\n` +
+                 `🏆 Total Blast: ${rep.total}\n\n` +
+                 `Sesi dibersihkan. Silahkan /login kembali.`;
     
     await bot.sendMessage(msg.chat.id, info, { parse_mode: 'Markdown' });
     
