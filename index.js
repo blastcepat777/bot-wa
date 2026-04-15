@@ -119,9 +119,9 @@ bot.onText(/\/start/, (msg) => {
     const rep = getReport();
     bot.sendMessage(msg.chat.id, 
         `🌪️ **NINJA BLAST ENGINE**\n\n` +
-        `📊 **REPORT HARI INI:** ${rep.date}\n` +
+        `📅 **REPORT HARI INI:** ${rep.date}\n` +
         `📊 **TOTAL BLAST:** ${rep.total}\n` +
-        `📅 Tanggal: ${rep.date}\n\n` +
+        `🦏 Semoga Ketemu Badak Hari Ini !!` +
         `/login - Koneksi\n/restart - Reset Sesi`, 
         { parse_mode: 'Markdown' }
     );
