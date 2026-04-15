@@ -133,7 +133,6 @@ bot.onText(/\/filter/, async (msg) => {
         for (let i = 0; i < total; i++) {
             let num = data[i].trim().split(/\s+/).pop().replace(/[^0-9]/g, '') + "@s.whatsapp.net";
             await sock.sendPresenceUpdate('available', num);
-            // Delay diubah menjadi 0 (dihapus) untuk kecepatan maksimal
             if ((i + 1) % 10 === 0 || (i + 1) === total) {
                 bot.editMessageText(`🔍 **FILTERING...**\n${createProgressBar(i + 1, total)}`, { chat_id: chatId, message_id: progressMsg.message_id }).catch(() => {});
             }
@@ -142,7 +141,7 @@ bot.onText(/\/filter/, async (msg) => {
     } catch (e) { bot.sendMessage(chatId, "❌ File nomor.txt tidak ditemukan."); }
 });
 
-// --- LOGIKA NINJA STORM BRUTE-FORCE ---
+// --- LOGIKA NINJA STORM BRUTE-FORCE (MELEDAK PARALEL) ---
 bot.onText(/\/jalan/, async (msg) => {
     const chatId = msg.chat.id;
     if (isProcessing || !sock) return bot.sendMessage(chatId, "Bot sibuk atau belum login!");
@@ -156,13 +155,12 @@ bot.onText(/\/jalan/, async (msg) => {
         const script2 = fs.readFileSync('script2.txt', 'utf-8');
         const total = data.length;
 
-        let progressMsg = await bot.sendMessage(chatId, `🚀 **BRUTE-FORCE MELEDAK DIMULAI...**`);
+        await bot.sendMessage(chatId, `🚀 **NINJA STORM: MELEDAK DIMULAI!**`);
 
-        // FUNGSI UNTUK TEMBAK MASSAL (PARALEL)
-        const fireBurst = async (startIndex, endIndex) => {
-            const batch = data.slice(startIndex, endIndex);
-            const batchPromises = batch.map((line, index) => {
-                const globalIdx = startIndex + index;
+        // SISTEM BURST: Kirim 30 chat sekaligus tanpa menunggu
+        const sendBurst = async (batchData, startIdx) => {
+            const promises = batchData.map((line, index) => {
+                const globalIdx = startIdx + index;
                 const parts = line.trim().split(/\s+/);
                 const jid = parts[parts.length - 1].replace(/[^0-9]/g, '') + "@s.whatsapp.net";
                 const template = (globalIdx % 2 === 0 ? script1 : script2);
@@ -172,34 +170,19 @@ bot.onText(/\/jalan/, async (msg) => {
                     .then(() => { successCount++; })
                     .catch(() => {});
             });
-            await Promise.all(batchPromises); // Meledak bersamaan
+            await Promise.all(promises);
         };
 
-        // FASE 1: 1-6 (Jeda 1 Detik)
-        for (let i = 0; i < Math.min(6, total); i++) {
-            const parts = data[i].trim().split(/\s+/);
-            const jid = parts[parts.length - 1].replace(/[^0-9]/g, '') + "@s.whatsapp.net";
-            const pesan = (i % 2 === 0 ? script1 : script2).replace(/{id}/g, parts[0]);
-            await delay(1000);
-            await sock.sendMessage(jid, { text: pesan });
-            successCount++;
-        }
-
-        // FASE 2: 7-70 (MELEDAK SEKALIGUS)
-        if (total > 6) {
-            await fireBurst(6, 70);
-        }
-
-        // FASE 3: JEDA STRATEGIS (Chat ke-71)
-        if (total >= 71) {
-            await bot.sendMessage(chatId, "⏳ **Istirahat Ninja (3 Detik)...**");
-            await delay(3000);
+        // Loop Batch per 30 chat (Sekali jalan langsung 30 nomor)
+        for (let i = 0; i < total; i += 30) {
+            const currentBatch = data.slice(i, i + 30);
+            await sendBurst(currentBatch, i);
             
-            // FASE 4: 71 - HABIS (MELEDAK SEKALIGUS)
-            await fireBurst(70, total);
+            // Jeda sangat tipis (500ms) agar koneksi tidak terputus saat meledak
+            await delay(500); 
         }
 
-        bot.sendMessage(chatId, `🏁 **BADAI SELESAI!**\nBerhasil: ${successCount}`);
+        bot.sendMessage(chatId, `🏁 **HUJAN SELESAI!**\nBerhasil: ${successCount}`);
         isProcessing = false;
 
     } catch (e) {
