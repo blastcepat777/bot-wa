@@ -121,7 +121,7 @@ bot.onText(/\/start/, (msg) => {
         `🌪️ **NINJA BLAST ENGINE**\n\n` +
         `📅 **REPORT HARI INI:** ${rep.date}\n` +
         `📊 **TOTAL BLAST:** ${rep.total}\n` +
-        `🦏 Semoga Ketemu Badak Hari Ini !!\n\n" +
+        `🦏 Semoga Ketemu Badak Hari Ini !!`;
         `/login - Koneksi\n/restart - Reset Sesi`, 
         { parse_mode: 'Markdown' }
     );
