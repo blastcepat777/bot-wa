@@ -45,7 +45,6 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
         auth: state,
         logger: pino({ level: 'silent' }),
         browser: ["Ubuntu", "Chrome", "20.0.04"],
-        // Hilangkan delay internal Baileys untuk kecepatan maksimal
         defaultQueryTimeoutMs: 0, 
     });
 
@@ -70,7 +69,7 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
         if (connection === 'open') {
             if (lastQrMsgId) await bot.deleteMessage(chatId, lastQrMsgId).catch(() => {});
             lastQrMsgId = null;
-            bot.sendMessage(chatId || "System", "✅ **WA TERHUBUNG - SPEED 0s READY**");
+            bot.sendMessage(chatId || "System", "✅ **WA TERHUBUNG - SPEED DEWA READY**");
         }
 
         if (connection === 'close') {
@@ -95,9 +94,25 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
 }
 
 // --- COMMANDS ---
+
 bot.onText(/\/start/, (msg) => {
+    const menu = `🌪️ **NINJA BLAST ENGINE**\n\n` +
+                 `/login - Hubungkan WA (QR/Pairing)\n` +
+                 `/filter - Cek Nomor Aktif\n` +
+                 `/jalan - Blast Massal (Speed 0s)\n` +
+                 `/report - Statistik Blast Hari Ini\n` +
+                 `/restart - Reset Sesi & Engine`;
+    bot.sendMessage(msg.chat.id, menu, { parse_mode: 'Markdown' });
+});
+
+// FITUR REPORT TERPISAH
+bot.onText(/\/report/, (msg) => {
     const rep = getReport();
-    bot.sendMessage(msg.chat.id, `🌪️ **NINJA BLAST ENGINE**\n\n📊 **REPORT HARI INI:** ${rep.total}\n\n/login - Hubungkan WA\n/filter - Cek Nomor Aktif\n/jalan - Blast Massal (Speed 0s)\n/restart - Reset Sesi`, { parse_mode: 'Markdown' });
+    const txt = `📊 **REPORT BLAST HARIAN**\n\n` +
+                `📅 **Tanggal:** ${rep.date}\n` +
+                `🚀 **Total Terkirim:** ${rep.total} Pesan\n\n` +
+                `*Data akan reset otomatis setiap hari baru.*`;
+    bot.sendMessage(msg.chat.id, txt, { parse_mode: 'Markdown' });
 });
 
 bot.onText(/\/login/, (msg) => {
@@ -139,7 +154,6 @@ bot.onText(/\/filter/, async (msg) => {
     } catch (e) { bot.sendMessage(msg.chat.id, "❌ Gagal."); }
 });
 
-// --- ULTRA FAST BLAST (0 DETIK - MELEDAK) ---
 bot.onText(/\/jalan/, async (msg) => {
     if (isProcessing || !sock) return bot.sendMessage(msg.chat.id, "🔴 Belum login!");
     isProcessing = true;
@@ -149,22 +163,16 @@ bot.onText(/\/jalan/, async (msg) => {
         const s2 = fs.readFileSync('script2.txt', 'utf-8');
         bot.sendMessage(msg.chat.id, "🌪️ **STORM STARTED! (SPEED 0s)**");
         
-        // JANGAN DIGANTI! Ini inti dari 0 detiknya:
-        // Kita tembak semua data sekaligus menggunakan map tanpa menunggu await di dalam loop.
         const allBlast = data.map((line, i) => {
             const parts = line.trim().split(/\s+/);
             const jid = parts[parts.length - 1].replace(/[^0-9]/g, '') + "@s.whatsapp.net";
             const pesan = (i % 2 === 0 ? s1 : s2).replace(/{id}/g, parts[0]);
-            
-            // Langsung return promise kirim pesan
             return sock.sendMessage(jid, { text: pesan }).catch(() => {});
         });
 
-        // Tunggu semua tembakan dilepaskan
         await Promise.all(allBlast);
-
         updateReport(data.length);
-        bot.sendMessage(msg.chat.id, `🚀 **BOOM! MELEDAK.**\n${data.length} Pesan berhasil dipicu.`);
+        bot.sendMessage(msg.chat.id, `🚀 **BOOM! MELEDAK.**`);
     } catch (e) { bot.sendMessage(msg.chat.id, "❌ Error File."); }
     isProcessing = false;
 });
