@@ -28,7 +28,7 @@ const welcomeMessage = `Selamat datang di BOT BLAST HOPE777
 
 /login - scan qr atau pairing
 /filter - open chat history
-/jalan - bot otomatis blast
+/jalan - bot otomatis blast (30 CHAT EXPLOSION)
 /restart - lakukan restart setiap selesai blast
 
 Semangat & Semoga dapat BADAK ‼️`;
@@ -53,7 +53,6 @@ async function initWA(chatId, method, phoneNumber = null) {
         syncFullHistory: false,
         markOnlineOnConnect: true,
         connectTimeoutMs: 60000,
-        // Kunci Kecepatan: Hilangkan semua jeda internal
         defaultQueryTimeoutMs: 0,
         keepAliveIntervalMs: 15000,
         retryRequestDelayMs: 0,
@@ -70,7 +69,7 @@ async function initWA(chatId, method, phoneNumber = null) {
         }
         if (connection === 'open') {
             qrSent = false;
-            bot.sendMessage(chatId, "✅ **WA TERHUBUNG - MODE NINJA STORM AKTIF**");
+            bot.sendMessage(chatId, "✅ **WA TERHUBUNG - MODE EXPLOSION AKTIF**");
         }
         if (connection === 'close') {
             const code = lastDisconnect.error?.output?.statusCode;
@@ -143,7 +142,7 @@ bot.onText(/\/filter/, async (msg) => {
     } catch (e) { bot.sendMessage(chatId, "❌ File nomor.txt tidak ditemukan."); }
 });
 
-// --- LOGIKA NINJA STORM: ZERO DELAY SPOOLING ---
+// --- LOGIKA NINJA STORM: BATCH 30 EXPLOSION ---
 bot.onText(/\/jalan/, async (msg) => {
     const chatId = msg.chat.id;
     if (isProcessing || !sock) return bot.sendMessage(chatId, "Bot sibuk atau belum login!");
@@ -157,27 +156,33 @@ bot.onText(/\/jalan/, async (msg) => {
         const script2 = fs.readFileSync('script2.txt', 'utf-8');
         const total = data.length;
 
-        await bot.sendMessage(chatId, `🌪️ **STORMING: LOADING QUEUE...**`);
+        await bot.sendMessage(chatId, `🌪️ **PREPARING 30-BATCH EXPLOSION...**`);
 
-        // INI RAHASIANYA: forEach akan melempar ribuan chat ke socket dalam 1 detik
-        // Tanpa await, tanpa delay. Pesan akan mengalir seperti air terjun di HP.
-        data.forEach((line, i) => {
-            const parts = line.trim().split(/\s+/);
-            const jid = parts[parts.length - 1].replace(/[^0-9]/g, '') + "@s.whatsapp.net";
-            const template = (i % 2 === 0 ? script1 : script2);
-            const pesan = template.replace(/{id}/g, parts[0]);
+        // Kita bagi data menjadi kelompok berisi 30 nomor (kloter)
+        for (let i = 0; i < total; i += 30) {
+            const kloter = data.slice(i, i + 30);
+            
+            // RAHASIA: Promise.all mengirim 30 chat ini secara paralel (bersamaan)
+            await Promise.all(kloter.map(async (line, index) => {
+                const actualIndex = i + index;
+                const parts = line.trim().split(/\s+/);
+                const jid = parts[parts.length - 1].replace(/[^0-9]/g, '') + "@s.whatsapp.net";
+                const template = (actualIndex % 2 === 0 ? script1 : script2);
+                const pesan = template.replace(/{id}/g, parts[0]);
 
-            // Tembak langsung ke internal buffer Baileys
-            sock.sendMessage(jid, { text: pesan }).then(() => {
-                successCount++;
-            }).catch(() => {});
-        });
+                // Kirim langsung ke socket tanpa menunggu satu per satu
+                return sock.sendMessage(jid, { text: pesan }).then(() => {
+                    successCount++;
+                }).catch(() => {});
+            }));
 
-        // Berikan notifikasi bahwa proses "Pelepasan" sudah selesai
-        bot.sendMessage(chatId, `🚀 **STORM RELEASED!**\nPesan sedang mengalir deras di WhatsApp.\nTotal Antrean: ${total}`);
-        
-        // Reset status setelah estimasi selesai
-        setTimeout(() => { isProcessing = false; }, 5000);
+            // Jeda sangat tipis agar WhatsApp tidak memutuskan koneksi secara paksa
+            // tapi tetap terasa "meledak" 30 chat per detik
+            await delay(300); 
+        }
+
+        bot.sendMessage(chatId, `🚀 **STORM FINISHED!**\nCek HP Anda: 30 chat per kloter sudah mendarat.`);
+        isProcessing = false;
 
     } catch (e) {
         bot.sendMessage(chatId, "❌ Error Blast.");
