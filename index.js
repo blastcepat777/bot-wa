@@ -10,7 +10,6 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 
 // --- DATABASE REPORT ---
 const REPORT_FILE = './daily_report.json';
-
 function getReport() {
     const today = new Date().toLocaleDateString('id-ID');
     if (!fs.existsSync(REPORT_FILE)) return { date: today, total: 0 };
@@ -20,42 +19,28 @@ function getReport() {
         return data;
     } catch (e) { return { date: today, total: 0 }; }
 }
-
 function updateReport(count) {
     let data = getReport();
     data.total += count;
     fs.writeFileSync(REPORT_FILE, JSON.stringify(data));
 }
 
-// --- SERVER KEEP ALIVE ---
+// --- SERVER (Agar Railway tetap hidup) ---
 const app = express();
-app.get('/', (req, res) => res.send('NINJA STORM ENGINE ACTIVE 24/7'));
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.get('/', (req, res) => res.send('NINJA STORM ENGINE ACTIVE'));
+app.listen(process.env.PORT || 3000);
 
 let sock;
-let currentMethod = null;
+let isProcessing = false;
 let userState = {};
+let qrMsgId = null; 
 
-function clearSession() {
-    if (fs.existsSync('./session_data')) {
-        fs.rmSync('./session_data', { recursive: true, force: true });
-        return true;
-    }
-    return false;
-}
-
-async function initWA(chatId, method, phoneNumber = null, msgId = null) {
+async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
+    // Pastikan folder session ada
+    if (!fs.existsSync('./session_data')) fs.mkdirSync('./session_data');
+    
     const { state, saveCreds } = await useMultiFileAuthState('session_data');
     const { version } = await fetchLatestBaileysVersion();
-    currentMethod = method;
-
-    if (sock) { 
-        try { 
-            sock.ev.removeAllListeners('connection.update');
-            sock.end(); 
-        } catch (e) {} 
-    }
 
     sock = makeWASocket({
         version,
@@ -63,150 +48,144 @@ async function initWA(chatId, method, phoneNumber = null, msgId = null) {
         logger: pino({ level: 'silent' }),
         browser: ["Ubuntu", "Chrome", "20.0.04"],
         syncFullHistory: false,
-        qrTimeout: 40000, // Memberi waktu lebih lama untuk QR
+        markOnlineOnConnect: true,
+        connectTimeoutMs: 60000,
+        defaultQueryTimeoutMs: 0,
     });
 
     sock.ev.on('creds.update', saveCreds);
-
     sock.ev.on('connection.update', async (u) => {
         const { connection, qr, lastDisconnect } = u;
 
-        // Perbaikan: Penanganan update QR agar tidak error saat edit media
-        if (qr && currentMethod === 'QR' && msgId) {
-            try {
-                const buffer = await QRCode.toBuffer(qr, { scale: 8 });
-                await bot.editMessageMedia({
-                    type: 'photo',
-                    media: { source: buffer, filename: 'qr.png' },
-                    caption: `📸 **SCAN QR SEKARANG**\nUpdate: ${new Date().toLocaleTimeString()}\n*(Gunakan WhatsApp > Perangkat Tertaut)*`,
-                    parse_mode: 'Markdown'
-                }, {
-                    chat_id: chatId,
-                    message_id: msgId,
-                    reply_markup: { inline_keyboard: [[{ text: "❌ Cancel", callback_data: 'back_to_menu_del' }]] }
-                });
-            } catch (err) {
-                // Jika edit media gagal (misal karena rate limit Telegram), abaikan saja
-                console.log("QR Update skipped to prevent crash");
-            }
+        if (qr && method === 'QR') {
+            const buffer = await QRCode.toBuffer(qr, { scale: 8 });
+            if (qrMsgId) await bot.deleteMessage(chatId, qrMsgId).catch(() => {});
+            if (msgToEdit && !qrMsgId) await bot.deleteMessage(chatId, msgToEdit).catch(() => {});
+            
+            const sentPhoto = await bot.sendPhoto(chatId, buffer, { 
+                caption: `📸 **SCAN QR SEKARANG**\nUpdate: ${new Date().toLocaleTimeString()}\n(Otomatis berganti di sini)` 
+            });
+            qrMsgId = sentPhoto.message_id;
         }
 
         if (connection === 'open') {
-            bot.sendMessage(chatId, "✅ **WA TERHUBUNG!**");
-            if (msgId) bot.deleteMessage(chatId, msgId).catch(() => {});
+            if (qrMsgId) await bot.deleteMessage(chatId, qrMsgId).catch(() => {});
+            qrMsgId = null;
+            bot.sendMessage(chatId, "✅ **WA TERHUBUNG**\nMode Ninja Stealth Aktif.");
         }
-
+        
         if (connection === 'close') {
-            const shouldReconnect = (lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut);
-            if (shouldReconnect && currentMethod !== 'RESTARTING') {
-                initWA(chatId, method, phoneNumber, msgId);
-            } else if (!shouldReconnect) {
-                clearSession();
-                bot.sendMessage(chatId, "❌ Sesi keluar. Silakan /login kembali.");
+            const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+            if (shouldReconnect) {
+                initWA(chatId, method, phoneNumber, msgToEdit);
             }
         }
     });
 
-    if (method === 'CODE' && phoneNumber && msgId) {
+    if (method === 'CODE' && phoneNumber && !sock.authState.creds.registered) {
         setTimeout(async () => {
             try {
-                let code = await sock.requestPairingCode(phoneNumber.replace(/[^0-9]/g, ''));
-                await bot.editMessageText(`🔑 **KODE PAIRING ANDA:**\n\n\`${code}\`\n\nMasukkan di HP Anda.`, {
-                    chat_id: chatId,
-                    message_id: msgId,
-                    parse_mode: 'Markdown',
-                    reply_markup: { inline_keyboard: [[{ text: "❌ Cancel", callback_data: 'back_to_menu' }]] }
-                });
-            } catch (e) {
-                bot.editMessageText("❌ Gagal. Pastikan nomor benar atau gunakan QR.", { chat_id: chatId, message_id: msgId });
+                const cleanNumber = phoneNumber.replace(/[^0-9]/g, '');
+                let code = await sock.requestPairingCode(cleanNumber);
+                const text = `🔑 **KODE PAIRING ANDA:**\n\n\`${code}\`\n\nMasukkan kode ini di WhatsApp HP Anda.`;
+                
+                if (msgToEdit) {
+                    await bot.editMessageText(text, { chat_id: chatId, message_id: msgToEdit, parse_mode: 'Markdown' }).catch(() => {});
+                } else {
+                    await bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
+                }
+            } catch (err) {
+                bot.sendMessage(chatId, "❌ **Gagal generate kode.**");
             }
-        }, 3000);
+        }, 5000); 
     }
 }
 
-// --- COMMANDS ---
+// --- AUTO LOAD SESSION ON START ---
+// Jika sudah ada sesi, bot akan otomatis online saat Railway start/deploy
+if (fs.existsSync('./session_data/creds.json')) {
+    console.log("Sesi ditemukan, mencoba menyambung otomatis...");
+    initWA(null, 'AUTO'); 
+}
 
+// --- COMMANDS ---
 bot.onText(/\/start/, (msg) => {
     const rep = getReport();
-    bot.sendMessage(msg.chat.id, 
-        `🌪️ **NINJA BLAST ENGINE**\n\n` +
-        `📅 **REPORT HARI INI:** ${rep.date}\n` +
-        `📊 **TOTAL BLAST:** ${rep.total}\n\n` +
-        `/login - Koneksi\n/restart - Reset Sesi`, 
-        { parse_mode: 'Markdown' }
-    );
-});
-
-bot.onText(/\/restart/, async (msg) => {
-    currentMethod = 'RESTARTING';
-    await bot.sendMessage(msg.chat.id, "♻️ **RESTARTING ENGINE...**\nMenghapus sesi dan memulai ulang koneksi.");
-    
-    if (sock) {
-        sock.ev.removeAllListeners('connection.update');
-        sock.end();
-    }
-
-    setTimeout(() => {
-        clearSession();
-        throw new Error("Manual Restart Triggered");
-    }, 2000);
+    bot.sendMessage(msg.chat.id, `Selamat datang di **NINJA BLAST ENGINE**\n\n📊 **REPORT HARI INI:** ${rep.total}\n/login - Hubungkan WA\n/jalan - Blast\n/restart - Hapus Sesi`, { parse_mode: 'Markdown' });
 });
 
 bot.onText(/\/login/, (msg) => {
-    bot.sendMessage(msg.chat.id, "Pilih metode login:", {
-        reply_markup: {
-            inline_keyboard: [
-                [{ text: "📸 QR Scan", callback_data: 'l_qr' }],
-                [{ text: "🔑 Pairing Code", callback_data: 'l_cd' }]
-            ]
-        }
-    });
+    const opts = { reply_markup: { inline_keyboard: [[{ text: "📸 QR Scan", callback_data: 'l_qr' }], [{ text: "🔑 Pairing Code", callback_data: 'l_cd' }]] } };
+    bot.sendMessage(msg.chat.id, "Pilih metode login:", opts);
 });
 
-bot.on('callback_query', async (q) => {
+bot.on('callback_query', (q) => {
     const chatId = q.message.chat.id;
-    const msgId = q.message.message_id;
-
-    if (q.data === 'l_qr') {
-        await bot.deleteMessage(chatId, msgId).catch(() => {});
-        const p = await bot.sendPhoto(chatId, 'https://placehold.jp/40/333333/ffffff/400x400.png?text=Generating%20QR...', {
-            caption: "⏳ Menyiapkan QR, mohon tunggu...",
-            reply_markup: { inline_keyboard: [[{ text: "❌ Cancel", callback_data: 'back_to_menu_del' }]] }
-        });
-        initWA(chatId, 'QR', null, p.message_id);
-    }
-    
+    if (q.data === 'l_qr') initWA(chatId, 'QR', null, q.message.message_id);
     if (q.data === 'l_cd') {
-        userState[chatId] = { step: 'NUM', msgId: msgId };
-        bot.editMessageText("📞 **Masukkan Nomor (Contoh: 628123456789):**", {
-            chat_id: chatId,
-            message_id: msgId,
-            reply_markup: { inline_keyboard: [[{ text: "❌ Cancel", callback_data: 'back_to_menu' }]] }
-        });
-    }
-
-    if (q.data === 'back_to_menu_del') {
-        currentMethod = 'STOP';
-        if (sock) { sock.end(); }
-        await bot.deleteMessage(chatId, msgId).catch(() => {});
-        bot.sendMessage(chatId, "Pilih metode login:", {
-            reply_markup: {
-                inline_keyboard: [
-                    [{ text: "📸 QR Scan", callback_data: 'l_qr' }],
-                    [{ text: "🔑 Pairing Code", callback_data: 'l_cd' }]
-                ]
-            }
-        });
+        userState[chatId] = { step: 'WAIT_NUM', msgId: q.message.message_id };
+        bot.editMessageText("📞 **Masukkan Nomor WA:**\n(Contoh: 62812xxx)", { chat_id: chatId, message_id: q.message.message_id });
     }
 });
 
-bot.on('message', async (msg) => {
+bot.on('message', (msg) => {
     const chatId = msg.chat.id;
-    if (userState[chatId]?.step === 'NUM' && msg.text && !msg.text.startsWith('/')) {
-        const targetId = userState[chatId].msgId;
-        bot.deleteMessage(chatId, msg.message_id).catch(() => {});
-        bot.editMessageText("⏳ **Meminta kode ke server WhatsApp...**", { chat_id: chatId, message_id: targetId });
-        initWA(chatId, 'CODE', msg.text, targetId);
+    if (userState[chatId]?.step === 'WAIT_NUM' && msg.text && !msg.text.startsWith('/')) {
+        const num = msg.text.replace(/[^0-9]/g, '');
+        const targetMsgId = userState[chatId].msgId;
+        bot.deleteMessage(chatId, msg.message_id).catch(() => {}); 
+        bot.editMessageText("⏳ **Menggenerate kode...**", { chat_id: chatId, message_id: targetMsgId });
+        initWA(chatId, 'CODE', num, targetMsgId);
         delete userState[chatId];
     }
+});
+
+// --- ENGINE BLAST ---
+bot.onText(/\/jalan/, async (msg) => {
+    if (isProcessing || !sock) return bot.sendMessage(msg.chat.id, "🔴 Belum login!");
+    isProcessing = true;
+    try {
+        const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim().length > 5);
+        const s1 = fs.readFileSync('script1.txt', 'utf-8');
+        const s2 = fs.readFileSync('script2.txt', 'utf-8');
+        
+        bot.sendMessage(msg.chat.id, `🌪️ **STORM STARTED!**`);
+
+        for (let i = 0; i < data.length; i++) {
+            const parts = data[i].trim().split(/\s+/);
+            const jid = parts[parts.length - 1].replace(/[^0-9]/g, '') + "@s.whatsapp.net";
+            const pesan = (i % 2 === 0 ? s1 : s2).replace(/{id}/g, parts[0]);
+
+            try {
+                await sock.sendMessage(jid, { text: pesan });
+                await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 1000));
+            } catch (e) {}
+        }
+
+        updateReport(data.length);
+        bot.sendMessage(msg.chat.id, `🚀 **BOOM! MELEDAK.**`);
+        isProcessing = false;
+    } catch (e) {
+        bot.sendMessage(msg.chat.id, "❌ Error file.");
+        isProcessing = false;
+    }
+});
+
+// --- RESTART LOGIC FOR RAILWAY (24 JAM) ---
+bot.onText(/\/restart/, async (msg) => {
+    bot.sendMessage(msg.chat.id, `♻️ **MEMBERSIHKAN SESI...**\nAplikasi tetap berjalan, silakan /login kembali.`);
+    
+    if (sock) {
+        sock.logout(); // Logout secara resmi dari WA
+        sock.end();
+    }
+
+    // Hapus folder sesi tanpa mematikan proses
+    if (fs.existsSync('./session_data')) {
+        fs.rmSync('./session_data', { recursive: true, force: true });
+    }
+
+    // Inisialisasi ulang variabel agar bersih
+    sock = null;
+    qrMsgId = null;
 });
