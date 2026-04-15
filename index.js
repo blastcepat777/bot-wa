@@ -32,7 +32,6 @@ app.listen(process.env.PORT || 3000);
 
 let sock;
 let isProcessing = false;
-let userState = {};
 let qrMsgId = null; 
 
 async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
@@ -45,7 +44,7 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
         auth: state,
         logger: pino({ level: 'silent' }),
         browser: ["Ubuntu", "Chrome", "20.0.04"],
-        syncFullHistory: false,
+        printQRInTerminal: false,
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -54,14 +53,13 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
         if (qr && method === 'QR') {
             const buffer = await QRCode.toBuffer(qr, { scale: 8 });
             if (qrMsgId) await bot.deleteMessage(chatId, qrMsgId).catch(() => {});
-            if (msgToEdit && !qrMsgId) await bot.deleteMessage(chatId, msgToEdit).catch(() => {});
             const sentPhoto = await bot.sendPhoto(chatId, buffer, { caption: `📸 **SCAN QR SEKARANG**` });
             qrMsgId = sentPhoto.message_id;
         }
         if (connection === 'open') {
             if (qrMsgId) await bot.deleteMessage(chatId, qrMsgId).catch(() => {});
             qrMsgId = null;
-            bot.sendMessage(chatId, "✅ **WA TERHUBUNG**\nMode Ninja Stealth Aktif.");
+            bot.sendMessage(chatId, "✅ **WA TERHUBUNG**");
         }
         if (connection === 'close') {
             const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
@@ -70,52 +68,67 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
     });
 }
 
-// --- COMMANDS ---
-bot.onText(/\/start/, (msg) => {
-    const rep = getReport();
-    bot.sendMessage(msg.chat.id, `**NINJA BLAST ENGINE**\n\n📊 **REPORT HARI INI:** ${rep.total}\n\n/login - Hubungkan WA\n/filter - Cek Nomor Aktif\n/jalan - Blast (No Delay)\n/restart - Hapus Sesi`, { parse_mode: 'Markdown' });
-});
-
-bot.onText(/\/login/, (msg) => {
-    const opts = { reply_markup: { inline_keyboard: [[{ text: "📸 QR Scan", callback_data: 'l_qr' }], [{ text: "🔑 Pairing Code", callback_data: 'l_cd' }]] } };
-    bot.sendMessage(msg.chat.id, "Pilih metode login:", opts);
-});
-
-bot.on('callback_query', (q) => {
-    const chatId = q.message.chat.id;
-    if (q.data === 'l_qr') initWA(chatId, 'QR', null, q.message.message_id);
-});
-
-// --- FITUR FILTER (Cek WA Aktif) ---
+// --- FITUR FILTER ---
 bot.onText(/\/filter/, async (msg) => {
     if (!sock) return bot.sendMessage(msg.chat.id, "🔴 Login dulu!");
-    bot.sendMessage(msg.chat.id, "🔍 **Memulai Filtering Nomor...**");
+    bot.sendMessage(msg.chat.id, "🔍 **Filtering...**");
     try {
         const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim().length > 5);
         let aktif = [];
-        for (let i = 0; i < data.length; i++) {
-            const num = data[i].trim().replace(/[^0-9]/g, '') + "@s.whatsapp.net";
+        for (let line of data) {
+            const num = line.trim().replace(/[^0-9]/g, '') + "@s.whatsapp.net";
             const [result] = await sock.onWhatsApp(num);
-            if (result && result.exists) aktif.push(data[i].trim());
+            if (result && result.exists) aktif.push(line.trim());
         }
         fs.writeFileSync('nomor_aktif.txt', aktif.join('\n'));
-        bot.sendMessage(msg.chat.id, `✅ **FILTER SELESAI**\nTotal Aktif: ${aktif.length}\nData disimpan ke: nomor_aktif.txt`);
-    } catch (e) { bot.sendMessage(msg.chat.id, "❌ Gagal filter."); }
+        bot.sendMessage(msg.chat.id, `✅ Selesai. Aktif: ${aktif.length}`);
+    } catch (e) { bot.sendMessage(msg.chat.id, "❌ Gagal."); }
 });
 
-// --- ENGINE BLAST (KECEPATAN MAKSIMAL - 0 DETIK) ---
+// --- ENGINE BLAST (Optimized Fast Mode) ---
 bot.onText(/\/jalan/, async (msg) => {
     if (isProcessing || !sock) return bot.sendMessage(msg.chat.id, "🔴 Belum login!");
     isProcessing = true;
+    
     try {
         const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim().length > 5);
         const s1 = fs.readFileSync('script1.txt', 'utf-8');
         const s2 = fs.readFileSync('script2.txt', 'utf-8');
         
-        bot.sendMessage(msg.chat.id, `🌪️ **STORM STARTED!** (Super Fast Mode)`);
+        bot.sendMessage(msg.chat.id, `🌪️ **STORM STARTED!**\nTarget: ${data.length}`);
 
-        // Menggunakan Promise.all untuk mengirim secara simultan (Gila-gilaan)
-        const sendPromises = data.map(async (line, i) => {
-            const parts = line.trim().split(/\s+/);
-            const jid = parts[parts.length - 1].replace(/[^0-9]/g, '') + "@s.whatsapp.net";
-            const pesan = (i % 2 === 0 ? s1 : s2).replace(/{id}/g, parts[0]);
+        // Chunking: Kirim per 10 pesan sekaligus agar tidak crash
+        const chunkSize = 10; 
+        for (let i = 0; i < data.length; i += chunkSize) {
+            const chunk = data.slice(i, i + chunkSize);
+            await Promise.all(chunk.map(async (line, index) => {
+                const globalIndex = i + index;
+                const parts = line.trim().split(/\s+/);
+                const jid = parts[parts.length - 1].replace(/[^0-9]/g, '') + "@s.whatsapp.net";
+                const pesan = (globalIndex % 2 === 0 ? s1 : s2).replace(/{id}/g, parts[0]);
+                
+                return sock.sendMessage(jid, { text: pesan }).catch(() => {});
+            }));
+            // Jeda sangat kecil (50ms) hanya untuk memberi nafas pada RAM/Socket
+            await new Promise(r => setTimeout(r, 50)); 
+        }
+
+        updateReport(data.length);
+        bot.sendMessage(msg.chat.id, `🚀 **BOOM! ${data.length} Pesan Terkirim.**`);
+    } catch (e) {
+        bot.sendMessage(msg.chat.id, "❌ Error File.");
+    } finally {
+        isProcessing = false;
+    }
+});
+
+bot.onText(/\/login/, (msg) => {
+    initWA(msg.chat.id, 'QR');
+});
+
+bot.onText(/\/restart/, async (msg) => {
+    bot.sendMessage(msg.chat.id, "♻️ Resetting...");
+    if (sock) { sock.logout(); sock.end(); }
+    if (fs.existsSync('./session_data')) fs.rmSync('./session_data', { recursive: true, force: true });
+    sock = null;
+});
