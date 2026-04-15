@@ -129,11 +129,11 @@ bot.onText(/\/filter/, async (msg) => {
     try {
         const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim().length > 5);
         const total = data.length;
-        let progressMsg = await bot.sendMessage(chatId, `🔍 **FILTERING (1s Delay)...**`);
+        let progressMsg = await bot.sendMessage(chatId, `🔍 **FILTERING (Ultra Fast)...**`);
         for (let i = 0; i < total; i++) {
             let num = data[i].trim().split(/\s+/).pop().replace(/[^0-9]/g, '') + "@s.whatsapp.net";
             await sock.sendPresenceUpdate('available', num);
-            await delay(1000);
+            // Delay diubah menjadi 0 (dihapus) untuk kecepatan maksimal
             if ((i + 1) % 10 === 0 || (i + 1) === total) {
                 bot.editMessageText(`🔍 **FILTERING...**\n${createProgressBar(i + 1, total)}`, { chat_id: chatId, message_id: progressMsg.message_id }).catch(() => {});
             }
