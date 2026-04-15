@@ -69,7 +69,7 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
         if (connection === 'open') {
             if (lastQrMsgId) await bot.deleteMessage(chatId, lastQrMsgId).catch(() => {});
             lastQrMsgId = null;
-            bot.sendMessage(chatId || "System", "✅ **WA TERHUBUNG - SPEED DEWA READY**");
+            bot.sendMessage(chatId || "System", "✅ **WA TERHUBUNG - /jalan SPEED DEWA READY**");
         }
 
         if (connection === 'close') {
