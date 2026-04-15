@@ -43,23 +43,23 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
-        browser: ["Ubuntu", "Chrome", "20.0.04"], // Browser yang lebih stabil untuk pairing
+        browser: ["Ubuntu", "Chrome", "20.0.04"], // Browser stabil untuk Pairing
         syncFullHistory: false,
         markOnlineOnConnect: true,
         connectTimeoutMs: 60000,
         defaultQueryTimeoutMs: 0,
-        keepAliveIntervalMs: 10000,
-        generateHighQualityLinkPreview: false,
     });
 
     sock.ev.on('creds.update', saveCreds);
     sock.ev.on('connection.update', async (u) => {
         const { connection, qr, lastDisconnect } = u;
 
+        // Logika Barcode berganti di tempat (Delete & Resend)
         if (qr && method === 'QR') {
             const buffer = await QRCode.toBuffer(qr, { scale: 8 });
             if (qrMsgId) await bot.deleteMessage(chatId, qrMsgId).catch(() => {});
             if (msgToEdit && !qrMsgId) await bot.deleteMessage(chatId, msgToEdit).catch(() => {});
+            
             const sentPhoto = await bot.sendPhoto(chatId, buffer, { 
                 caption: `📸 **SCAN QR SEKARANG**\nUpdate: ${new Date().toLocaleTimeString()}\n(Otomatis berganti di sini)` 
             });
@@ -74,31 +74,35 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
         
         if (connection === 'close') {
             const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            if (shouldReconnect) initWA(chatId, method, phoneNumber);
+            if (shouldReconnect) initWA(chatId, method, phoneNumber, msgToEdit);
         }
     });
 
-    // --- PERBAIKAN FINAL PAIRING CODE ---
+    // --- PERBAIKAN PAIRING CODE (GANTI DI TEMPAT) ---
     if (method === 'CODE' && phoneNumber && !sock.authState.creds.registered) {
-        // Beri waktu Baileys untuk inisialisasi internal sebelum requestPairingCode
+        // Delay 5 detik sangat krusial agar socket siap menerima request pairing
         setTimeout(async () => {
             try {
-                // Pastikan nomor diawali dengan kode negara tanpa simbol +
-                const formattedNumber = phoneNumber.replace(/[^0-9]/g, '');
-                let code = await sock.requestPairingCode(formattedNumber);
+                const cleanNumber = phoneNumber.replace(/[^0-9]/g, '');
+                let code = await sock.requestPairingCode(cleanNumber);
                 
-                const text = `🔑 **KODE PAIRING ANDA:**\n\n\`${code}\`\n\nMasukkan di notifikasi WA HP Anda (Tautkan Perangkat).`;
+                const text = `🔑 **KODE PAIRING ANDA:**\n\n\`${code}\`\n\nMasukkan kode ini di notifikasi WhatsApp HP Anda.`;
                 
+                // Mengganti teks "Menggenerate kode..." menjadi Kode Pairing asli
                 if (msgToEdit) {
-                    await bot.editMessageText(text, { chat_id: chatId, message_id: msgToEdit, parse_mode: 'Markdown' });
+                    await bot.editMessageText(text, { 
+                        chat_id: chatId, 
+                        message_id: msgToEdit, 
+                        parse_mode: 'Markdown' 
+                    }).catch(() => {});
                 } else {
                     await bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
                 }
             } catch (err) {
                 console.error("Pairing Error:", err);
-                bot.sendMessage(chatId, "❌ **Gagal generate kode.**\n\n1. Pastikan nomor benar.\n2. Jika terus gagal, klik /restart.");
+                bot.sendMessage(chatId, "❌ **Gagal generate kode.**\nPastikan nomor benar (628xxx) atau coba /restart.");
             }
-        }, 3000); // Tunggu 3 detik agar socket stabil
+        }, 5000); 
     }
 }
 
@@ -131,7 +135,7 @@ bot.on('callback_query', (q) => {
     if (q.data === 'l_qr') initWA(chatId, 'QR', null, msgId);
     if (q.data === 'l_cd') {
         userState[chatId] = { step: 'WAIT_NUM', msgId: msgId };
-        bot.editMessageText("📞 **Masukkan Nomor WA Anda:**\n(Gunakan format 628xxx)", { chat_id: chatId, message_id: msgId });
+        bot.editMessageText("📞 **Masukkan Nomor WA Anda:**\nContoh: 62812345678", { chat_id: chatId, message_id: msgId });
     }
 });
 
@@ -140,8 +144,10 @@ bot.on('message', (msg) => {
     if (userState[chatId]?.step === 'WAIT_NUM' && msg.text && !msg.text.startsWith('/')) {
         const num = msg.text.replace(/[^0-9]/g, '');
         const targetMsgId = userState[chatId].msgId;
+        
         bot.deleteMessage(chatId, msg.message_id).catch(() => {}); 
-        bot.editMessageText("⏳ **Menghubungkan ke server WhatsApp...**\nMohon tunggu sejenak.", { chat_id: chatId, message_id: targetMsgId });
+        bot.editMessageText("⏳ **Sedang menggenerate kode...**\nMohon tunggu 5 detik.", { chat_id: chatId, message_id: targetMsgId });
+        
         initWA(chatId, 'CODE', num, targetMsgId);
         delete userState[chatId];
     }
@@ -171,14 +177,13 @@ bot.onText(/\/jalan/, async (msg) => {
                     setTimeout(async () => {
                         await sock.sendMessage(jid, { text: pesan });
                         await sock.sendPresenceUpdate('paused', jid);
-                    }, Math.random() * 1500); 
+                    }, Math.random() * 2000); 
                 } catch (e) {}
             });
         });
 
         updateReport(data.length);
         const rep = getReport();
-
         bot.sendMessage(chatId, `🚀 **BOOM! MELEDAK.**\n\n✅ Berhasil: ${data.length}\n📊 Total Hari Ini: ${rep.total}`);
         setTimeout(() => { isProcessing = false; }, 5000);
 
@@ -190,18 +195,8 @@ bot.onText(/\/jalan/, async (msg) => {
 
 bot.onText(/\/restart/, async (msg) => {
     const rep = getReport();
-    const info = `♻️ **SYSTEM RESTARTING...**\n\n` +
-                 `📈 Hari Ini: ${rep.date}\n` +
-                 `🏆 Total Blast: ${rep.total}\n\n` +
-                 `Sesi dibersihkan. Silahkan /login kembali.`;
-    
+    const info = `♻️ **SYSTEM RESTARTING...**\n\n🏆 Total Hari Ini: ${rep.total}\n\nSesi dibersihkan.`;
     await bot.sendMessage(msg.chat.id, info, { parse_mode: 'Markdown' });
-    
-    // Matikan koneksi socket jika ada
-    if (sock) sock.end();
-    
-    // Hapus sesi agar benar-benar bersih
     if (fs.existsSync('./session_data')) fs.rmSync('./session_data', { recursive: true, force: true });
-    
     setTimeout(() => { process.exit(); }, 2000);
 });
