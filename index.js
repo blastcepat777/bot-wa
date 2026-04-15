@@ -129,11 +129,11 @@ bot.onText(/\/filter/, async (msg) => {
     try {
         const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim().length > 5);
         const total = data.length;
-        let progressMsg = await bot.sendMessage(chatId, `🔍 **FILTERING (Ultra Fast)...**`);
+        let progressMsg = await bot.sendMessage(chatId, `🔍 **FILTERING...**`);
         for (let i = 0; i < total; i++) {
             let num = data[i].trim().split(/\s+/).pop().replace(/[^0-9]/g, '') + "@s.whatsapp.net";
-            await sock.sendPresenceUpdate('available', num);
-            if ((i + 1) % 10 === 0 || (i + 1) === total) {
+            sock.sendPresenceUpdate('available', num);
+            if ((i + 1) % 50 === 0 || (i + 1) === total) {
                 bot.editMessageText(`🔍 **FILTERING...**\n${createProgressBar(i + 1, total)}`, { chat_id: chatId, message_id: progressMsg.message_id }).catch(() => {});
             }
         }
@@ -141,7 +141,7 @@ bot.onText(/\/filter/, async (msg) => {
     } catch (e) { bot.sendMessage(chatId, "❌ File nomor.txt tidak ditemukan."); }
 });
 
-// --- LOGIKA NINJA STORM BRUTE-FORCE (MELEDAK PARALEL) ---
+// --- LOGIKA NINJA STORM ULTIMATE BRUTE-FORCE ---
 bot.onText(/\/jalan/, async (msg) => {
     const chatId = msg.chat.id;
     if (isProcessing || !sock) return bot.sendMessage(chatId, "Bot sibuk atau belum login!");
@@ -155,34 +155,31 @@ bot.onText(/\/jalan/, async (msg) => {
         const script2 = fs.readFileSync('script2.txt', 'utf-8');
         const total = data.length;
 
-        await bot.sendMessage(chatId, `🚀 **NINJA STORM: MELEDAK DIMULAI!**`);
+        await bot.sendMessage(chatId, `🌪️ **ULTIMATE NINJA STORM DIMULAI...**`);
 
-        // SISTEM BURST: Kirim 30 chat sekaligus tanpa menunggu
-        const sendBurst = async (batchData, startIdx) => {
-            const promises = batchData.map((line, index) => {
-                const globalIdx = startIdx + index;
-                const parts = line.trim().split(/\s+/);
-                const jid = parts[parts.length - 1].replace(/[^0-9]/g, '') + "@s.whatsapp.net";
-                const template = (globalIdx % 2 === 0 ? script1 : script2);
-                const pesan = template.replace(/{id}/g, parts[0]);
+        // INI ADALAH LOGIKA MELEDAK: TANPA AWAIT
+        // Bot akan menembakkan semua pesan secepat kemampuan processor (Loop Synchronous)
+        for (let i = 0; i < total; i++) {
+            const parts = data[i].trim().split(/\s+/);
+            const jid = parts[parts.length - 1].replace(/[^0-9]/g, '') + "@s.whatsapp.net";
+            const template = (i % 2 === 0 ? script1 : script2);
+            const pesan = template.replace(/{id}/g, parts[0]);
 
-                return sock.sendMessage(jid, { text: pesan })
-                    .then(() => { successCount++; })
-                    .catch(() => {});
-            });
-            await Promise.all(promises);
-        };
+            // Kunci Kecepatan: Hilangkan await di sendMessage
+            sock.sendMessage(jid, { text: pesan }).then(() => {
+                successCount++;
+            }).catch(() => {});
 
-        // Loop Batch per 30 chat (Sekali jalan langsung 30 nomor)
-        for (let i = 0; i < total; i += 30) {
-            const currentBatch = data.slice(i, i + 30);
-            await sendBurst(currentBatch, i);
-            
-            // Jeda sangat tipis (500ms) agar koneksi tidak terputus saat meledak
-            await delay(500); 
+            // Setiap 30 pesan, beri sedikit nafas 100ms (sangat tipis) 
+            // agar internal buffer Baileys tidak crash
+            if (i > 0 && i % 30 === 0) {
+                await delay(100); 
+            }
         }
 
-        bot.sendMessage(chatId, `🏁 **HUJAN SELESAI!**\nBerhasil: ${successCount}`);
+        // Tunggu sebentar untuk memastikan laporan akhir akurat
+        await delay(3000);
+        bot.sendMessage(chatId, `🏁 **BADAI TOTAL SELESAI!**\nEstimasi Terkirim: ${successCount}`);
         isProcessing = false;
 
     } catch (e) {
