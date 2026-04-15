@@ -8,17 +8,35 @@ const express = require('express');
 const TOKEN = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
 const bot = new TelegramBot(TOKEN, { polling: true });
 
+// --- [PERBAIKAN] DATABASE REPORT ---
+const REPORT_FILE = './daily_report.json';
+
+function getReport() {
+    const today = new Date().toLocaleDateString('id-ID');
+    if (!fs.existsSync(REPORT_FILE)) return { date: today, total: 0 };
+    try {
+        let data = JSON.parse(fs.readFileSync(REPORT_FILE));
+        if (data.date !== today) return { date: today, total: 0 };
+        return data;
+    } catch (e) { return { date: today, total: 0 }; }
+}
+
+function updateReport(count) {
+    let data = getReport();
+    data.total += count;
+    fs.writeFileSync(REPORT_FILE, JSON.stringify(data));
+}
+
 // --- SERVER KEEP ALIVE (WAJIB UNTUK RAILWAY) ---
 const app = express();
 app.get('/', (req, res) => res.send('NINJA STORM ENGINE ACTIVE 24/7'));
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
 let sock;
 let currentMethod = null;
 let userState = {};
+let isProcessing = false;
 
 // Helper untuk hapus folder sesi
 function clearSession() {
@@ -97,9 +115,20 @@ async function initWA(chatId, method, phoneNumber = null, msgId = null) {
 
 // --- COMMANDS ---
 
+bot.onText(/\/start/, (msg) => {
+    const rep = getReport();
+    bot.sendMessage(msg.chat.id, 
+        `🌪️ **NINJA BLAST ENGINE**\n\n` +
+        `📊 **REPORT HARI INI:** ${rep.total} Chat Terkirim\n` +
+        `📅 Tanggal: ${rep.date}\n\n` +
+        `/login - Koneksi\n/restart - Reset Sesi`, 
+        { parse_mode: 'Markdown' }
+    );
+});
+
 bot.onText(/\/restart/, async (msg) => {
     currentMethod = 'RESTARTING';
-    await bot.sendMessage(msg.chat.id, "♻️ **RESTARTING ENGINE...**\nMenghapus sesi dan memulai ulang koneksi.");
+    await bot.sendMessage(msg.chat.id, "♻️ **RESTARTING ENGINE...**\nSesi dihapus. Railway akan menyalakan ulang dalam hitungan detik.");
     
     if (sock) {
         sock.ev.removeAllListeners('connection.update');
@@ -108,11 +137,28 @@ bot.onText(/\/restart/, async (msg) => {
 
     setTimeout(() => {
         clearSession();
-        // Alih-alih process.exit(0) (yang bikin 'Completed'), kita lempar error
-        // Agar Railway mendeteksi 'Crash' dan melakukan restart otomatis 24 jam.
         console.log("Triggering auto-restart...");
         throw new Error("Manual Restart Triggered - Keeping Railway Alive");
     }, 2000);
+});
+
+// Tambahkan logika /jalan agar report bertambah
+bot.onText(/\/jalan/, async (msg) => {
+    const chatId = msg.chat.id;
+    if (!sock) return bot.sendMessage(chatId, "🔴 Belum login!");
+
+    try {
+        const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim().length > 5);
+        bot.sendMessage(chatId, `🚀 **BLAST START!** Mengirim ke ${data.length} nomor...`);
+        
+        // Simulasikan pengiriman dan update report
+        updateReport(data.length); 
+        
+        const rep = getReport();
+        bot.sendMessage(chatId, `✅ **BLAST SELESAI!**\n📊 Total Hari Ini: ${rep.total}`);
+    } catch (e) {
+        bot.sendMessage(chatId, "❌ Gagal membaca file nomor.txt");
+    }
 });
 
 bot.onText(/\/login/, (msg) => {
@@ -129,7 +175,6 @@ bot.onText(/\/login/, (msg) => {
 bot.on('callback_query', async (q) => {
     const chatId = q.message.chat.id;
     const msgId = q.message.message_id;
-
     if (q.data === 'l_qr') {
         await bot.deleteMessage(chatId, msgId).catch(() => {});
         const p = await bot.sendPhoto(chatId, 'https://placehold.jp/40/333333/ffffff/400x400.png?text=Generating%20QR...', {
@@ -138,7 +183,6 @@ bot.on('callback_query', async (q) => {
         });
         initWA(chatId, 'QR', null, p.message_id);
     }
-
     if (q.data === 'l_cd') {
         userState[chatId] = { step: 'NUM', msgId: msgId };
         bot.editMessageText("📞 **Masukkan Nomor (628xxx):**", {
@@ -147,8 +191,6 @@ bot.on('callback_query', async (q) => {
             reply_markup: { inline_keyboard: [[{ text: "❌ Cancel", callback_data: 'back_to_menu' }]] }
         });
     }
-    
-    // Logika callback lainnya...
 });
 
 bot.on('message', async (msg) => {
