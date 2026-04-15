@@ -181,7 +181,8 @@ bot.onText(/\/restart/, async (msg) => {
     const info = `♻️ **SYSTEM RESTARTING...**\n\n` +
                  `📈 Terakhir Blast: ${rep.date}\n` +
                  `🏆 Total Chat Terkirim: ${rep.total}\n` +
-                 `Status Sesi: Cleaning data...`;
+                 `Status Sesi: Cleaning data... ${rep.total}\n` +
+                 `Tekan /login untuk blast`;
     
     await bot.sendMessage(msg.chat.id, info, { parse_mode: 'Markdown' });
     
