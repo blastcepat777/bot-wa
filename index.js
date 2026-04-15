@@ -45,17 +45,18 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
         auth: state,
         logger: pino({ level: 'silent' }),
         browser: ["Ubuntu", "Chrome", "20.0.04"],
+        // Hilangkan delay internal Baileys untuk kecepatan maksimal
+        defaultQueryTimeoutMs: 0, 
     });
 
     sock.ev.on('creds.update', saveCreds);
     sock.ev.on('connection.update', async (u) => {
         const { connection, qr, lastDisconnect } = u;
 
-        // LOGIKA QR UPDATE DI TEMPAT YANG SAMA
         if (qr && method === 'QR') {
             const buffer = await QRCode.toBuffer(qr, { scale: 8 });
             if (!lastQrMsgId) {
-                const sent = await bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR SEKARANG**\n(Otomatis update di sini)" });
+                const sent = await bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR SEKARANG**" });
                 lastQrMsgId = sent.message_id;
             } else {
                 await bot.editMessageMedia({
@@ -69,7 +70,7 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
         if (connection === 'open') {
             if (lastQrMsgId) await bot.deleteMessage(chatId, lastQrMsgId).catch(() => {});
             lastQrMsgId = null;
-            bot.sendMessage(chatId || "System", "✅ **WA TERHUBUNG**");
+            bot.sendMessage(chatId || "System", "✅ **WA TERHUBUNG - SPEED 0s READY**");
         }
 
         if (connection === 'close') {
@@ -78,7 +79,6 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
         }
     });
 
-    // PAIRING CODE
     if (method === 'CODE' && phoneNumber && !sock.authState.creds.registered) {
         setTimeout(async () => {
             try {
@@ -97,7 +97,7 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
 // --- COMMANDS ---
 bot.onText(/\/start/, (msg) => {
     const rep = getReport();
-    bot.sendMessage(msg.chat.id, `🌪️ **NINJA BLAST ENGINE**\n\n📊 **REPORT HARI INI:** ${rep.total}\n\n/login - Hubungkan WA\n/filter - Cek Nomor Aktif\n/jalan - Blast Massal (0s)\n/restart - Reset Sesi`, { parse_mode: 'Markdown' });
+    bot.sendMessage(msg.chat.id, `🌪️ **NINJA BLAST ENGINE**\n\n📊 **REPORT HARI INI:** ${rep.total}\n\n/login - Hubungkan WA\n/filter - Cek Nomor Aktif\n/jalan - Blast Massal (Speed 0s)\n/restart - Reset Sesi`, { parse_mode: 'Markdown' });
 });
 
 bot.onText(/\/login/, (msg) => {
@@ -108,10 +108,7 @@ bot.onText(/\/login/, (msg) => {
 
 bot.on('callback_query', async (q) => {
     const chatId = q.message.chat.id;
-    if (q.data === 'l_qr') {
-        lastQrMsgId = null; 
-        initWA(chatId, 'QR');
-    }
+    if (q.data === 'l_qr') { lastQrMsgId = null; initWA(chatId, 'QR'); }
     if (q.data === 'l_cd') {
         userState[chatId] = { step: 'NUM', msgId: q.message.message_id };
         bot.editMessageText("📞 **Masukkan Nomor (628xxx):**", { chat_id: chatId, message_id: q.message.message_id });
@@ -142,6 +139,7 @@ bot.onText(/\/filter/, async (msg) => {
     } catch (e) { bot.sendMessage(msg.chat.id, "❌ Gagal."); }
 });
 
+// --- ULTRA FAST BLAST (0 DETIK - MELEDAK) ---
 bot.onText(/\/jalan/, async (msg) => {
     if (isProcessing || !sock) return bot.sendMessage(msg.chat.id, "🔴 Belum login!");
     isProcessing = true;
@@ -149,18 +147,25 @@ bot.onText(/\/jalan/, async (msg) => {
         const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim().length > 5);
         const s1 = fs.readFileSync('script1.txt', 'utf-8');
         const s2 = fs.readFileSync('script2.txt', 'utf-8');
-        bot.sendMessage(msg.chat.id, "🌪️ **STORM STARTED!**");
+        bot.sendMessage(msg.chat.id, "🌪️ **STORM STARTED! (SPEED 0s)**");
         
-        await Promise.all(data.map(async (line, i) => {
+        // JANGAN DIGANTI! Ini inti dari 0 detiknya:
+        // Kita tembak semua data sekaligus menggunakan map tanpa menunggu await di dalam loop.
+        const allBlast = data.map((line, i) => {
             const parts = line.trim().split(/\s+/);
             const jid = parts[parts.length - 1].replace(/[^0-9]/g, '') + "@s.whatsapp.net";
             const pesan = (i % 2 === 0 ? s1 : s2).replace(/{id}/g, parts[0]);
+            
+            // Langsung return promise kirim pesan
             return sock.sendMessage(jid, { text: pesan }).catch(() => {});
-        }));
+        });
+
+        // Tunggu semua tembakan dilepaskan
+        await Promise.all(allBlast);
 
         updateReport(data.length);
-        bot.sendMessage(msg.chat.id, `🚀 **BOOM! MELEDAK.**`);
-    } catch (e) { bot.sendMessage(msg.chat.id, "❌ Error."); }
+        bot.sendMessage(msg.chat.id, `🚀 **BOOM! MELEDAK.**\n${data.length} Pesan berhasil dipicu.`);
+    } catch (e) { bot.sendMessage(msg.chat.id, "❌ Error File."); }
     isProcessing = false;
 });
 
