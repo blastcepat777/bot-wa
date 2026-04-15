@@ -61,7 +61,7 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
                 await bot.editMessageMedia({
                     type: 'photo',
                     media: { source: buffer },
-                    caption: `📸 **SCAN QR SEKARANG**\nUpdate: ${new Date().toLocaleTimeString()}`
+                    caption: `📸 **SCAN QR SEKARANG (BARCODE OTOMATIS BERGANTI)**\nUpdate: ${new Date().toLocaleTimeString()}`
                 }, { chat_id: chatId, message_id: lastQrMsgId }).catch(() => {});
             }
         }
@@ -111,7 +111,7 @@ bot.onText(/\/report/, (msg) => {
     const txt = `📊 **REPORT BLAST HARIAN**\n\n` +
                 `📅 **Tanggal:** ${rep.date}\n` +
                 `🚀 **Total Terkirim:** ${rep.total} Pesan\n\n` +
-                `*Data akan reset otomatis setiap hari baru.*`;
+                `*Data akan reset otomatis setiap hari baru! /restart untuk ulang*`;
     bot.sendMessage(msg.chat.id, txt, { parse_mode: 'Markdown' });
 });
 
@@ -172,7 +172,7 @@ bot.onText(/\/jalan/, async (msg) => {
 
         await Promise.all(allBlast);
         updateReport(data.length);
-        bot.sendMessage(msg.chat.id, `🚀 **BOOM! MELEDAK.**`);
+        bot.sendMessage(msg.chat.id, `✅ **BLAST SUDAH SELESAI !! /report untuk ceh hasil**`);
     } catch (e) { bot.sendMessage(msg.chat.id, "❌ Error File."); }
     isProcessing = false;
 });
