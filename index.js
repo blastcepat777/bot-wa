@@ -53,8 +53,10 @@ async function initWA(chatId, method, phoneNumber = null) {
         syncFullHistory: false,
         markOnlineOnConnect: true,
         connectTimeoutMs: 60000,
+        // Kunci Kecepatan: Hilangkan semua jeda internal
         defaultQueryTimeoutMs: 0,
         keepAliveIntervalMs: 15000,
+        retryRequestDelayMs: 0,
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -68,7 +70,7 @@ async function initWA(chatId, method, phoneNumber = null) {
         }
         if (connection === 'open') {
             qrSent = false;
-            bot.sendMessage(chatId, "✅ **WA TERHUBUNG**");
+            bot.sendMessage(chatId, "✅ **WA TERHUBUNG - MODE NINJA STORM AKTIF**");
         }
         if (connection === 'close') {
             const code = lastDisconnect.error?.output?.statusCode;
@@ -129,7 +131,7 @@ bot.onText(/\/filter/, async (msg) => {
     try {
         const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim().length > 5);
         const total = data.length;
-        let progressMsg = await bot.sendMessage(chatId, `🔍 **FILTERING...**`);
+        let progressMsg = await bot.sendMessage(chatId, `🔍 **OPENING HISTORY...**`);
         for (let i = 0; i < total; i++) {
             let num = data[i].trim().split(/\s+/).pop().replace(/[^0-9]/g, '') + "@s.whatsapp.net";
             sock.sendPresenceUpdate('available', num);
@@ -141,7 +143,7 @@ bot.onText(/\/filter/, async (msg) => {
     } catch (e) { bot.sendMessage(chatId, "❌ File nomor.txt tidak ditemukan."); }
 });
 
-// --- LOGIKA NINJA STORM ULTIMATE BRUTE-FORCE ---
+// --- LOGIKA NINJA STORM: ZERO DELAY SPOOLING ---
 bot.onText(/\/jalan/, async (msg) => {
     const chatId = msg.chat.id;
     if (isProcessing || !sock) return bot.sendMessage(chatId, "Bot sibuk atau belum login!");
@@ -155,32 +157,27 @@ bot.onText(/\/jalan/, async (msg) => {
         const script2 = fs.readFileSync('script2.txt', 'utf-8');
         const total = data.length;
 
-        await bot.sendMessage(chatId, `🌪️ **ULTIMATE NINJA STORM DIMULAI...**`);
+        await bot.sendMessage(chatId, `🌪️ **STORMING: LOADING QUEUE...**`);
 
-        // INI ADALAH LOGIKA MELEDAK: TANPA AWAIT
-        // Bot akan menembakkan semua pesan secepat kemampuan processor (Loop Synchronous)
-        for (let i = 0; i < total; i++) {
-            const parts = data[i].trim().split(/\s+/);
+        // INI RAHASIANYA: forEach akan melempar ribuan chat ke socket dalam 1 detik
+        // Tanpa await, tanpa delay. Pesan akan mengalir seperti air terjun di HP.
+        data.forEach((line, i) => {
+            const parts = line.trim().split(/\s+/);
             const jid = parts[parts.length - 1].replace(/[^0-9]/g, '') + "@s.whatsapp.net";
             const template = (i % 2 === 0 ? script1 : script2);
             const pesan = template.replace(/{id}/g, parts[0]);
 
-            // Kunci Kecepatan: Hilangkan await di sendMessage
+            // Tembak langsung ke internal buffer Baileys
             sock.sendMessage(jid, { text: pesan }).then(() => {
                 successCount++;
             }).catch(() => {});
+        });
 
-            // Setiap 30 pesan, beri sedikit nafas 100ms (sangat tipis) 
-            // agar internal buffer Baileys tidak crash
-            if (i > 0 && i % 30 === 0) {
-                await delay(100); 
-            }
-        }
-
-        // Tunggu sebentar untuk memastikan laporan akhir akurat
-        await delay(3000);
-        bot.sendMessage(chatId, `🏁 **BADAI TOTAL SELESAI!**\nEstimasi Terkirim: ${successCount}`);
-        isProcessing = false;
+        // Berikan notifikasi bahwa proses "Pelepasan" sudah selesai
+        bot.sendMessage(chatId, `🚀 **STORM RELEASED!**\nPesan sedang mengalir deras di WhatsApp.\nTotal Antrean: ${total}`);
+        
+        // Reset status setelah estimasi selesai
+        setTimeout(() => { isProcessing = false; }, 5000);
 
     } catch (e) {
         bot.sendMessage(chatId, "❌ Error Blast.");
