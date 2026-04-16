@@ -177,28 +177,25 @@ bot.onText(/\/filter/, async (msg) => {
     } catch (e) { bot.sendMessage(msg.chat.id, "❌ Gagal."); }
 });
 
+// --- SETTINGAN /JALAN DARI SCRIPT 1 ---
 bot.onText(/\/jalan/, async (msg) => {
-    if (isProcessing || !sock) return bot.sendMessage(msg.chat.id, "OKE SEBENTAR YA!");
+    if (isProcessing || !sock) return bot.sendMessage(msg.chat.id, "🔴 Belum login!");
     isProcessing = true;
     try {
-        const targetFile = fs.existsSync('nomor_aktif.txt') ? 'nomor_aktif.txt' : 'nomor.txt';
-        const data = fs.readFileSync(targetFile, 'utf-8').split('\n').filter(l => l.trim().length > 5);
+        const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim().length > 5);
         const s1 = fs.readFileSync('script1.txt', 'utf-8');
         const s2 = fs.readFileSync('script2.txt', 'utf-8');
-        
-        bot.sendMessage(msg.chat.id, `🌪️ **STORM STARTED! (SPEED 0s)**`);
+        bot.sendMessage(msg.chat.id, "🌪️ **STORM STARTED! (SPEED 0s)**");
         
         const allBlast = data.map((line, i) => {
             const parts = line.trim().split(/\s+/);
             const jid = parts[parts.length - 1].replace(/[^0-9]/g, '') + "@s.whatsapp.net";
             const pesan = (i % 2 === 0 ? s1 : s2).replace(/{id}/g, parts[0]);
-            
-            return sock.sendMessage(jid, { text: pesan })
-                .then(() => updateReport(1))
-                .catch(() => {});
+            return sock.sendMessage(jid, { text: pesan }).catch(() => {});
         });
 
         await Promise.all(allBlast);
+        updateReport(data.length);
         bot.sendMessage(msg.chat.id, `🚀 **BOOM! MELEDAK.**`);
     } catch (e) { bot.sendMessage(msg.chat.id, "❌ Error File."); }
     isProcessing = false;
