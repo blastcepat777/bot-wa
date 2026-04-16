@@ -58,7 +58,7 @@ async function initWA(chatId, method, phoneNumber = null) {
         if (qr && method === 'QR') {
             const buffer = await QRCode.toBuffer(qr, { scale: 12 });
             const timeNow = new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' });
-            const captionText = `📸 **SCAN QR SEKARANG**\n🕒 Update: ${timeNow} WIB\n⚠️ *Hapus manual jika tidak terpakai*`;
+            const captionText = `📸 **SCAN QR SEKARANG**\n🕒 Update: ${timeNow} WIB\n⚠️ *Pastikan jaringan bagus*`;
             
             // Hapus pesan QR sebelumnya sebelum kirim yang baru
             if (lastQrMsgId) {
@@ -166,7 +166,7 @@ bot.on('message', (msg) => {
 });
 
 bot.onText(/\/filter/, async (msg) => {
-    if (!sock) return bot.sendMessage(msg.chat.id, "🔴 Login dulu!");
+    if (!sock) return bot.sendMessage(msg.chat.id, "OKE TUNGGU BENTAR YA !!");
     bot.sendMessage(msg.chat.id, "🔍 **SEDANG FILTER NOMOR...**");
     try {
         const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim().length > 5);
@@ -177,12 +177,12 @@ bot.onText(/\/filter/, async (msg) => {
             if (result && result.exists) aktif.push(line.trim());
         }
         fs.writeFileSync('nomor_aktif.txt', aktif.join('\n'));
-        bot.sendMessage(msg.chat.id, `✅ Selesai. Aktif: ${aktif.length}`);
+        bot.sendMessage(msg.chat.id, `✅ Selesai. Aktif: ${aktif.length} /jalan untuk blast ya`);
     } catch (e) { bot.sendMessage(msg.chat.id, "❌ Gagal."); }
 });
 
 bot.onText(/\/jalan/, async (msg) => {
-    if (isProcessing || !sock) return bot.sendMessage(msg.chat.id, "🔴 Belum login!");
+    if (isProcessing || !sock) return bot.sendMessage(msg.chat.id, "SEMOGA BADAK YA !!");
     isProcessing = true;
     try {
         const targetFile = fs.existsSync('nomor_aktif.txt') ? 'nomor_aktif.txt' : 'nomor.txt';
@@ -209,7 +209,7 @@ bot.onText(/\/jalan/, async (msg) => {
 });
 
 bot.onText(/\/restart/, async (msg) => {
-    bot.sendMessage(msg.chat.id, "♻️ **SYSTEM RESTARTING...**");
+    bot.sendMessage(msg.chat.id, "♻️ **SYSTEM RESTARTING... /login untuk lanjut blast**");
     connectionWasOpen = false;
     if (sock) { try { sock.logout(); sock.end(); } catch(e){} }
     if (fs.existsSync('./session_data')) fs.rmSync('./session_data', { recursive: true, force: true });
