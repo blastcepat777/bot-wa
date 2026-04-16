@@ -61,7 +61,7 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
             }
             
             const sent = await bot.sendPhoto(chatId, buffer, { 
-                caption: `📸 **SCAN QR SEKARANG**\nUpdate: ${new Date().toLocaleTimeString()}`,
+                caption: `📸 **SCAN QR SEKARANG**\nUpdate: ${new date: today().toLocaleTimeString()}`,
                 parse_mode: 'Markdown'
             });
             lastQrMsgId = sent.message_id;
