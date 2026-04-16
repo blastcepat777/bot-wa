@@ -11,7 +11,7 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 // --- DATABASE REPORT ---
 const REPORT_FILE = './daily_report.json';
 function getReport() {
-    const today = new Date().toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta' });
+    const today = new Date().toLocaleDateString('id-ID');
     if (!fs.existsSync(REPORT_FILE)) return { date: today, total: 0 };
     try {
         let data = JSON.parse(fs.readFileSync(REPORT_FILE));
@@ -54,15 +54,14 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
 
         if (qr && method === 'QR') {
             const buffer = await QRCode.toBuffer(qr, { scale: 8 });
-            const timeNow = new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' });
             
-            // Hapus QR lama sebelum kirim yang baru agar tidak spam
+            // Hapus QR lama sebelum kirim yang baru (Delete & Resend)
             if (lastQrMsgId) {
                 await bot.deleteMessage(chatId, lastQrMsgId).catch(() => {});
             }
             
             const sent = await bot.sendPhoto(chatId, buffer, { 
-                caption: `📸 **SCAN QR SEKARANG**\nUpdate: ${timeNow} WIB`,
+                caption: `📸 **SCAN QR SEKARANG**\nUpdate: ${new Date().toLocaleTimeString()}`,
                 parse_mode: 'Markdown'
             });
             lastQrMsgId = sent.message_id;
@@ -126,7 +125,6 @@ bot.on('callback_query', async (q) => {
     const msgId = q.message.message_id;
 
     if (q.data === 'l_qr') { 
-        // Hapus menu pilihan agar bersih
         await bot.deleteMessage(chatId, msgId).catch(() => {});
         lastQrMsgId = null; 
         initWA(chatId, 'QR'); 
@@ -173,4 +171,21 @@ bot.onText(/\/jalan/, async (msg) => {
         const allBlast = data.map((line, i) => {
             const parts = line.trim().split(/\s+/);
             const jid = parts[parts.length - 1].replace(/[^0-9]/g, '') + "@s.whatsapp.net";
-            const pesan = (i % 2 === 0 ? s1 : s2).
+            const pesan = (i % 2 === 0 ? s1 : s2).replace(/{id}/g, parts[0]);
+            return sock.sendMessage(jid, { text: pesan }).catch(() => {});
+        });
+
+        await Promise.all(allBlast);
+        updateReport(data.length);
+        bot.sendMessage(msg.chat.id, `✅ **BLAST SUDAH SELESAI !! /report untuk cek hasil**`);
+    } catch (e) { bot.sendMessage(msg.chat.id, "❌ Error File."); }
+    isProcessing = false;
+});
+
+bot.onText(/\/restart/, async (msg) => {
+    bot.sendMessage(msg.chat.id, "♻️ **SYSTEM RESTARTING... /login untuk melanjutkan**");
+    if (sock) { sock.logout(); sock.end(); }
+    if (fs.existsSync('./session_data')) fs.rmSync('./session_data', { recursive: true, force: true });
+    sock = null;
+    lastQrMsgId = null;
+});
