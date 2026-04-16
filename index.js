@@ -126,4 +126,34 @@ bot.onText(/\/start/, (msg) => {
 
 bot.onText(/\/report/, (msg) => {
     const rep = getReport();
-    const txt = `📊 **REPORT BLAST HAR
+    const txt = `📊 **REPORT BLAST HARIAN**\n\n` +
+                `📅 **Tanggal:** ${rep.date}\n` +
+                `🚀 **Total Terkirim:** ${rep.total} Pesan \n\n` +
+                `🔄 **/restart dulu ya biar blast lebih lancar`;
+    bot.sendMessage(msg.chat.id, txt, { parse_mode: 'Markdown' });
+});
+
+bot.onText(/\/login/, (msg) => {
+    bot.sendMessage(msg.chat.id, "Pilih metode login:", {
+        reply_markup: { inline_keyboard: [[{ text: "📸 QR Scan", callback_data: 'l_qr' }], [{ text: "🔑 Pairing Code", callback_data: 'l_cd' }]] }
+    });
+});
+
+bot.on('callback_query', async (q) => {
+    const chatId = q.message.chat.id;
+    const msgId = q.message.message_id;
+    if (q.data === 'l_qr') { 
+        await bot.deleteMessage(chatId, msgId).catch(() => {});
+        lastQrMsgId = null; 
+        initWA(chatId, 'QR'); 
+    }
+    if (q.data === 'l_cd') {
+        userState[chatId] = { step: 'NUM', msgId: msgId };
+        bot.editMessageText("📞 **Masukkan Nomor (628xxx):**", { chat_id: chatId, message_id: msgId });
+    }
+});
+
+bot.on('message', (msg) => {
+    const chatId = msg.chat.id;
+    if (userState[chatId]?.step === 'NUM' && msg.text && !msg.text.startsWith('/')) {
+        initWA(chatId, 'CODE', msg.text, userState[chatId].msgId);
