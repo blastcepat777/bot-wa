@@ -35,7 +35,7 @@ let isProcessing = false;
 let userState = {};
 let lastQrMsgId = null; 
 let isLoggedOutNotified = false; 
-let isConnected = false; // Guard agar tidak spam "WA TERHUBUNG"
+let connectionWasOpen = false; // Guard anti-spam notif "Terhubung"
 
 async function initWA(chatId, method, phoneNumber = null) {
     if (!fs.existsSync('./session_data')) fs.mkdirSync('./session_data');
@@ -54,64 +54,53 @@ async function initWA(chatId, method, phoneNumber = null) {
     sock.ev.on('connection.update', async (u) => {
         const { connection, qr, lastDisconnect } = u;
 
-        // --- HANDLE QR (ANTI SPAM & AUTO UPDATE) ---
+        // --- FIX QR SPAM ---
         if (qr && method === 'QR') {
             const buffer = await QRCode.toBuffer(qr, { scale: 12 });
-            const captionText = `📸 **SCAN QR SEKARANG**\n🕒 Update: ${new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB\n⚠️ *Gunakan versi WA terbaru*`;
+            const timeNow = new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' });
+            const captionText = `📸 **SCAN QR SEKARANG**\n🕒 Update: ${timeNow} WIB\n⚠️ *Hapus manual jika tidak terpakai*`;
             
+            // Hapus pesan QR sebelumnya sebelum kirim yang baru
             if (lastQrMsgId) {
-                // Gunakan editMessageMedia supaya tidak spam gambar baru
-                await bot.editMessageMedia({
-                    type: 'photo',
-                    media: { source: buffer },
-                    caption: captionText,
-                    parse_mode: 'Markdown'
-                }, { chat_id: chatId, message_id: lastQrMsgId }).catch(async () => {
-                    // Jika gagal edit (misal pesan dihapus user), kirim baru
-                    const sent = await bot.sendPhoto(chatId, buffer, { caption: captionText, parse_mode: 'Markdown' });
-                    lastQrMsgId = sent.message_id;
-                });
-            } else {
-                const sent = await bot.sendPhoto(chatId, buffer, { caption: captionText, parse_mode: 'Markdown' });
-                lastQrMsgId = sent.message_id;
+                await bot.deleteMessage(chatId, lastQrMsgId).catch(() => {});
             }
+            const sent = await bot.sendPhoto(chatId, buffer, { caption: captionText, parse_mode: 'Markdown' });
+            lastQrMsgId = sent.message_id;
         }
 
-        // --- HUBUNGAN TERBUKA ---
+        // --- FIX CONNECTION SPAM ---
         if (connection === 'open') {
             isLoggedOutNotified = false; 
             if (lastQrMsgId) {
                 await bot.deleteMessage(chatId, lastQrMsgId).catch(() => {});
                 lastQrMsgId = null;
             }
-            
-            if (!isConnected) { // Kirim notif terhubung hanya sekali
+            if (!connectionWasOpen) {
                 bot.sendMessage(chatId || "System", "✅ **WA TERHUBUNG - /filter cek dulu ya**");
-                isConnected = true;
+                connectionWasOpen = true;
             }
         }
 
-        // --- HUBUNGAN TERPUTUS ---
         if (connection === 'close') {
-            isConnected = false;
+            connectionWasOpen = false;
             const statusCode = lastDisconnect?.error?.output?.statusCode;
             
             if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
                 if (!isLoggedOutNotified) {
-                    bot.sendMessage(chatId || "System", "🚫 **WA TERBLOKIR / LOGOUT!**\nSesi dihapus. Klik /restart lalu /login lagi.");
+                    bot.sendMessage(chatId || "System", "🚫 **WA TERBLOKIR / LOGOUT!**\nSesi dihapus. Klik /restart.");
                     isLoggedOutNotified = true;
                 }
                 if (fs.existsSync('./session_data')) fs.rmSync('./session_data', { recursive: true, force: true });
                 sock = null;
                 lastQrMsgId = null;
             } else {
-                // Reconnect otomatis tanpa spam
+                // Reconnect tanpa mengirim pesan berulang
                 initWA(chatId, method, phoneNumber);
             }
         }
     });
 
-    // --- PAIRING CODE (ANTI SPAM) ---
+    // --- FIX PAIRING SPAM ---
     if (method === 'CODE' && phoneNumber && !sock.authState.creds.registered) {
         setTimeout(async () => {
             try {
@@ -119,14 +108,10 @@ async function initWA(chatId, method, phoneNumber = null) {
                 const txt = `🔑 **KODE PAIRING ANDA:**\n\n\`${code}\`\n\nMasukkan di WhatsApp Anda.`;
                 
                 if (lastQrMsgId) {
-                    await bot.editMessageText(txt, { chat_id: chatId, message_id: lastQrMsgId, parse_mode: 'Markdown' }).catch(async () => {
-                        const sent = await bot.sendMessage(chatId, txt, { parse_mode: 'Markdown' });
-                        lastQrMsgId = sent.message_id;
-                    });
-                } else {
-                    const sent = await bot.sendMessage(chatId, txt, { parse_mode: 'Markdown' });
-                    lastQrMsgId = sent.message_id;
+                    await bot.deleteMessage(chatId, lastQrMsgId).catch(() => {});
                 }
+                const sent = await bot.sendMessage(chatId, txt, { parse_mode: 'Markdown' });
+                lastQrMsgId = sent.message_id;
             } catch (e) { bot.sendMessage(chatId, "❌ Gagal pairing."); }
         }, 3000);
     }
@@ -175,4 +160,60 @@ bot.on('message', (msg) => {
     const chatId = msg.chat.id;
     if (userState[chatId]?.step === 'NUM' && msg.text && !msg.text.startsWith('/')) {
         lastQrMsgId = userState[chatId].msgId; 
-        init
+        initWA(chatId, 'CODE', msg.text);
+        delete userState[chatId];
+    }
+});
+
+bot.onText(/\/filter/, async (msg) => {
+    if (!sock) return bot.sendMessage(msg.chat.id, "🔴 Login dulu!");
+    bot.sendMessage(msg.chat.id, "🔍 **SEDANG FILTER NOMOR...**");
+    try {
+        const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim().length > 5);
+        let aktif = [];
+        for (let line of data) {
+            const num = line.trim().replace(/[^0-9]/g, '') + "@s.whatsapp.net";
+            const [result] = await sock.onWhatsApp(num);
+            if (result && result.exists) aktif.push(line.trim());
+        }
+        fs.writeFileSync('nomor_aktif.txt', aktif.join('\n'));
+        bot.sendMessage(msg.chat.id, `✅ Selesai. Aktif: ${aktif.length}`);
+    } catch (e) { bot.sendMessage(msg.chat.id, "❌ Gagal."); }
+});
+
+bot.onText(/\/jalan/, async (msg) => {
+    if (isProcessing || !sock) return bot.sendMessage(msg.chat.id, "🔴 Belum login!");
+    isProcessing = true;
+    try {
+        const targetFile = fs.existsSync('nomor_aktif.txt') ? 'nomor_aktif.txt' : 'nomor.txt';
+        const data = fs.readFileSync(targetFile, 'utf-8').split('\n').filter(l => l.trim().length > 5);
+        const s1 = fs.readFileSync('script1.txt', 'utf-8');
+        const s2 = fs.readFileSync('script2.txt', 'utf-8');
+        bot.sendMessage(msg.chat.id, `🌪️ **STORM STARTED! (${data.length} Pesan)**`);
+        
+        // Loop Berurutan agar updateReport sinkron
+        for (let i = 0; i < data.length; i++) {
+            const line = data[i];
+            const parts = line.trim().split(/\s+/);
+            const jid = parts[parts.length - 1].replace(/[^0-9]/g, '') + "@s.whatsapp.net";
+            const pesan = (i % 2 === 0 ? s1 : s2).replace(/{id}/g, parts[0]);
+            
+            await sock.sendMessage(jid, { text: pesan })
+                .then(() => updateReport(1))
+                .catch(() => {});
+        }
+
+        bot.sendMessage(msg.chat.id, `✅ **BLAST SELESAI!**`);
+    } catch (e) { bot.sendMessage(msg.chat.id, "❌ Error File."); }
+    isProcessing = false;
+});
+
+bot.onText(/\/restart/, async (msg) => {
+    bot.sendMessage(msg.chat.id, "♻️ **SYSTEM RESTARTING...**");
+    connectionWasOpen = false;
+    if (sock) { try { sock.logout(); sock.end(); } catch(e){} }
+    if (fs.existsSync('./session_data')) fs.rmSync('./session_data', { recursive: true, force: true });
+    sock = null;
+    lastQrMsgId = null;
+    isLoggedOutNotified = false;
+});
