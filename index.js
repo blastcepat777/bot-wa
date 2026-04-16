@@ -87,7 +87,7 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
             
             // CEK JIKA NOMOR TERBLOKIR / LOGOUT (401)
             if (reason === DisconnectReason.loggedOut || reason === 401) {
-                bot.sendMessage(chatId, "🚫 **NOTIFIKASI: NOMOR WA ANDA TERBLOKIR / LOGOUT!**\nSesi otomatis dihapus. Silakan ganti nomor dan /login ulang.");
+                bot.sendMessage(chatId, "🚫 **NOTIFIKASI: NOMOR WA ANDA TERBLOKIR / LOGOUT!**\nSesi otomatis dihapus. Silakan ganti nomor dan /restart cache bersih & lancar pada saat digunakan.");
                 if (fs.existsSync('./session_data')) fs.rmSync('./session_data', { recursive: true, force: true });
                 sock = null;
             } else {
