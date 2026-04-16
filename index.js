@@ -76,6 +76,21 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
             const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
             if (shouldReconnect) initWA(chatId, method, phoneNumber, msgToEdit);
         }
+
+        if (connection === 'close') {
+            const statusCode = lastDisconnect?.error?.output?.statusCode;
+            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+
+            // --- NOTIFIKASI BLOKIR / KELUAR ---
+            if (statusCode === DisconnectReason.loggedOut) {
+                bot.sendMessage(chatId || msg.chat.id, "⚠️ **WA KAMU KELUAR YA?**\n\nSesi telah terputus atau nomor mungkin dibatasi/blokir oleh WhatsApp. Silakan /login ulang.");
+                if (fs.existsSync('./session_data')) fs.rmSync('./session_data', { recursive: true, force: true });
+                sock = null;
+            } else if (shouldReconnect) {
+                // Reconnect otomatis jika cuma gangguan jaringan
+                initWA(chatId, method, phoneNumber, msgToEdit);
+            }
+        }
     });
 
     if (method === 'CODE' && phoneNumber && !sock.authState.creds.registered) {
