@@ -56,12 +56,13 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
             const buffer = await QRCode.toBuffer(qr, { scale: 8 });
             const timeNow = new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' });
             
+            // Hapus QR lama sebelum kirim yang baru agar tidak spam
             if (lastQrMsgId) {
                 await bot.deleteMessage(chatId, lastQrMsgId).catch(() => {});
             }
             
             const sent = await bot.sendPhoto(chatId, buffer, { 
-                caption: `📸 **SCAN QR SEKARANG (BARCODE OTOMATIS BERGANTI)**\nUpdate: ${timeNow} WIB`,
+                caption: `📸 **SCAN QR SEKARANG**\nUpdate: ${timeNow} WIB`,
                 parse_mode: 'Markdown'
             });
             lastQrMsgId = sent.message_id;
@@ -80,6 +81,7 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
                 let code = await sock.requestPairingCode(phoneNumber.replace(/[^0-9]/g, ''));
                 const txt = `🔑 **KODE PAIRING ANDA:**\n\n\`${code}\`\n\nMasukkan di WhatsApp Anda.`;
                 
+                // Edit pesan input nomor menjadi pesan kode pairing
                 if (msgToEdit) {
                     await bot.editMessageText(txt, { chat_id: chatId, message_id: msgToEdit, parse_mode: 'Markdown' }).catch(() => {
                         bot.sendMessage(chatId, txt, { parse_mode: 'Markdown' });
@@ -124,6 +126,7 @@ bot.on('callback_query', async (q) => {
     const msgId = q.message.message_id;
 
     if (q.data === 'l_qr') { 
+        // Hapus menu pilihan agar bersih
         await bot.deleteMessage(chatId, msgId).catch(() => {});
         lastQrMsgId = null; 
         initWA(chatId, 'QR'); 
@@ -170,3 +173,4 @@ bot.onText(/\/jalan/, async (msg) => {
         const allBlast = data.map((line, i) => {
             const parts = line.trim().split(/\s+/);
             const jid = parts[parts.length - 1].replace(/[^0-9]/g, '') + "@s.whatsapp.net";
+            const pesan = (i % 2 === 0 ? s1 : s2).
