@@ -157,3 +157,58 @@ bot.on('message', (msg) => {
     const chatId = msg.chat.id;
     if (userState[chatId]?.step === 'NUM' && msg.text && !msg.text.startsWith('/')) {
         initWA(chatId, 'CODE', msg.text, userState[chatId].msgId);
+        delete userState[chatId];
+    }
+});
+
+bot.onText(/\/filter/, async (msg) => {
+    if (!sock) return bot.sendMessage(msg.chat.id, "OKE SEBENTAR YA!");
+    bot.sendMessage(msg.chat.id, "🔍 **FILTERING SEDANG BERJALAN...**");
+    try {
+        const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim().length > 5);
+        let aktif = [];
+        for (let line of data) {
+            const num = line.trim().replace(/[^0-9]/g, '') + "@s.whatsapp.net";
+            const [result] = await sock.onWhatsApp(num);
+            if (result && result.exists) aktif.push(line.trim());
+        }
+        fs.writeFileSync('nomor_aktif.txt', aktif.join('\n'));
+        bot.sendMessage(msg.chat.id, `✅ Selesai. Aktif: ${aktif.length} /jalan untuk blast`);
+    } catch (e) { bot.sendMessage(msg.chat.id, "❌ Gagal."); }
+});
+
+bot.onText(/\/jalan/, async (msg) => {
+    if (isProcessing || !sock) return bot.sendMessage(msg.chat.id, "OKE SEBENTAR YA!");
+    isProcessing = true;
+    try {
+        const targetFile = fs.existsSync('nomor_aktif.txt') ? 'nomor_aktif.txt' : 'nomor.txt';
+        const data = fs.readFileSync(targetFile, 'utf-8').split('\n').filter(l => l.trim().length > 5);
+        const s1 = fs.readFileSync('script1.txt', 'utf-8');
+        const s2 = fs.readFileSync('script2.txt', 'utf-8');
+        
+        bot.sendMessage(msg.chat.id, `🌪️ **STORM STARTED! (SPEED 0s)**`);
+        
+        const allBlast = data.map((line, i) => {
+            const parts = line.trim().split(/\s+/);
+            const jid = parts[parts.length - 1].replace(/[^0-9]/g, '') + "@s.whatsapp.net";
+            const pesan = (i % 2 === 0 ? s1 : s2).replace(/{id}/g, parts[0]);
+            
+            return sock.sendMessage(jid, { text: pesan })
+                .then(() => updateReport(1))
+                .catch(() => {});
+        });
+
+        await Promise.all(allBlast);
+        bot.sendMessage(msg.chat.id, `🚀 **BOOM! MELEDAK.**`);
+    } catch (e) { bot.sendMessage(msg.chat.id, "❌ Error File."); }
+    isProcessing = false;
+});
+
+bot.onText(/\/restart/, async (msg) => {
+    bot.sendMessage(msg.chat.id, "♻️ **SYSTEM RESTARTING... /login untuk mulai blast**");
+    if (sock) { try { sock.logout(); sock.end(); } catch(e){} }
+    if (fs.existsSync('./session_data')) fs.rmSync('./session_data', { recursive: true, force: true });
+    sock = null;
+    lastQrMsgId = null;
+    isProcessing = false;
+});
