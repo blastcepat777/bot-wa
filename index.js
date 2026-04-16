@@ -11,7 +11,7 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 // --- DATABASE REPORT ---
 const REPORT_FILE = './daily_report.json';
 function getReport() {
-    const today = new Date().toLocaleDateString('id-ID');
+    const today = new Date().toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta' });
     if (!fs.existsSync(REPORT_FILE)) return { date: today, total: 0 };
     try {
         let data = JSON.parse(fs.readFileSync(REPORT_FILE));
@@ -54,14 +54,14 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
 
         if (qr && method === 'QR') {
             const buffer = await QRCode.toBuffer(qr, { scale: 8 });
+            const timeNow = new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' });
             
-            // Hapus QR lama sebelum kirim yang baru (Delete & Resend)
             if (lastQrMsgId) {
                 await bot.deleteMessage(chatId, lastQrMsgId).catch(() => {});
             }
             
             const sent = await bot.sendPhoto(chatId, buffer, { 
-                caption: `📸 **SCAN QR SEKARANG**\nUpdate: ${new Date().toLocaleTimeString()}`,
+                caption: `📸 **SCAN QR SEKARANG (BARCODE OTOMATIS BERGANTI)**\nUpdate: ${timeNow} WIB`,
                 parse_mode: 'Markdown'
             });
             lastQrMsgId = sent.message_id;
@@ -80,7 +80,6 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
                 let code = await sock.requestPairingCode(phoneNumber.replace(/[^0-9]/g, ''));
                 const txt = `🔑 **KODE PAIRING ANDA:**\n\n\`${code}\`\n\nMasukkan di WhatsApp Anda.`;
                 
-                // Edit pesan input nomor menjadi pesan kode pairing
                 if (msgToEdit) {
                     await bot.editMessageText(txt, { chat_id: chatId, message_id: msgToEdit, parse_mode: 'Markdown' }).catch(() => {
                         bot.sendMessage(chatId, txt, { parse_mode: 'Markdown' });
@@ -171,21 +170,3 @@ bot.onText(/\/jalan/, async (msg) => {
         const allBlast = data.map((line, i) => {
             const parts = line.trim().split(/\s+/);
             const jid = parts[parts.length - 1].replace(/[^0-9]/g, '') + "@s.whatsapp.net";
-            const pesan = (i % 2 === 0 ? s1 : s2).replace(/{id}/g, parts[0]);
-            return sock.sendMessage(jid, { text: pesan }).catch(() => {});
-        });
-
-        await Promise.all(allBlast);
-        updateReport(data.length);
-        bot.sendMessage(msg.chat.id, `✅ **BLAST SUDAH SELESAI !! /report untuk cek hasil**`);
-    } catch (e) { bot.sendMessage(msg.chat.id, "❌ Error File."); }
-    isProcessing = false;
-});
-
-bot.onText(/\/restart/, async (msg) => {
-    bot.sendMessage(msg.chat.id, "♻️ **SYSTEM RESTARTING... /login untuk melanjutkan**");
-    if (sock) { sock.logout(); sock.end(); }
-    if (fs.existsSync('./session_data')) fs.rmSync('./session_data', { recursive: true, force: true });
-    sock = null;
-    lastQrMsgId = null;
-});
