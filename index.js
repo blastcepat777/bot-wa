@@ -83,7 +83,7 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
 
             // --- NOTIFIKASI BLOKIR / KELUAR ---
             if (statusCode === DisconnectReason.loggedOut) {
-                bot.sendMessage(chatId || msg.chat.id, "⚠️ **WA KAMU KELUAR YA?**\n\nSesi telah terputus atau nomor mungkin dibatasi/blokir oleh WhatsApp. Silakan /login ulang.");
+                bot.sendMessage(chatId || msg.chat.id, "⚠️ **WA KAMU KOK KELUAR YA?**\n\nSesi telah terputus atau nomor mungkin dibatasi/blokir oleh WhatsApp. Silakan /login ulang.");
                 if (fs.existsSync('./session_data')) fs.rmSync('./session_data', { recursive: true, force: true });
                 sock = null;
             } else if (shouldReconnect) {
