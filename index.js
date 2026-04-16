@@ -11,7 +11,8 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 // --- DATABASE REPORT ---
 const REPORT_FILE = './daily_report.json';
 function getReport() {
-    const today = new Date().toLocaleDateString('id-ID');
+    // Mengunci tanggal ke WIB
+    const today = new Date().toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta' });
     if (!fs.existsSync(REPORT_FILE)) return { date: today, total: 0 };
     try {
         let data = JSON.parse(fs.readFileSync(REPORT_FILE));
@@ -44,7 +45,7 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
-        browser: ["Ubuntu", "Chrome", "20.0.04"],
+        browser: ["Ninja Storm", "Chrome", "1.0.0"], // Browser name lebih stabil
         defaultQueryTimeoutMs: 0, 
     });
 
@@ -53,15 +54,23 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
         const { connection, qr } = u;
 
         if (qr && method === 'QR') {
-            const buffer = await QRCode.toBuffer(qr, { scale: 8 });
+            // Skala 10 agar barcode lebih tajam dan mudah di-scan
+            const buffer = await QRCode.toBuffer(qr, { scale: 10, margin: 2 });
             
-            // Hapus QR lama sebelum kirim yang baru (Delete & Resend)
+            // Mengambil jam sekarang Asia/Jakarta
+            const timeNow = new Date().toLocaleTimeString('id-ID', { 
+                timeZone: 'Asia/Jakarta', 
+                hour: '2-digit', 
+                minute: '2-digit', 
+                second: '2-digit' 
+            });
+
             if (lastQrMsgId) {
                 await bot.deleteMessage(chatId, lastQrMsgId).catch(() => {});
             }
             
             const sent = await bot.sendPhoto(chatId, buffer, { 
-                caption: `📸 **SCAN QR SEKARANG**\nUpdate: ${new date: today().toLocaleTimeString()}`,
+                caption: `📸 **SCAN QR SEKARANG**\n\n🕒 **Update:** ${timeNow} WIB\n⚠️ *Barcode berganti otomatis*`,
                 parse_mode: 'Markdown'
             });
             lastQrMsgId = sent.message_id;
@@ -80,7 +89,6 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
                 let code = await sock.requestPairingCode(phoneNumber.replace(/[^0-9]/g, ''));
                 const txt = `🔑 **KODE PAIRING ANDA:**\n\n\`${code}\`\n\nMasukkan di WhatsApp Anda.`;
                 
-                // Edit pesan input nomor menjadi pesan kode pairing
                 if (msgToEdit) {
                     await bot.editMessageText(txt, { chat_id: chatId, message_id: msgToEdit, parse_mode: 'Markdown' }).catch(() => {
                         bot.sendMessage(chatId, txt, { parse_mode: 'Markdown' });
