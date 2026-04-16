@@ -34,6 +34,7 @@ let sock;
 let isProcessing = false;
 let userState = {};
 let lastQrMsgId = null; 
+let isLoggedOutNotified = false; // Flag untuk anti-spam info keluar
 
 async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
     if (!fs.existsSync('./session_data')) fs.mkdirSync('./session_data');
@@ -52,6 +53,7 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
     sock.ev.on('connection.update', async (u) => {
         const { connection, qr, lastDisconnect } = u;
 
+        // HANDLE QR (Update di tempat yang sama)
         if (qr && method === 'QR') {
             const buffer = await QRCode.toBuffer(qr, { scale: 8 });
             if (!lastQrMsgId) {
@@ -67,21 +69,41 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
         }
 
         if (connection === 'open') {
+            isLoggedOutNotified = false; // Reset status notifikasi
             if (lastQrMsgId) await bot.deleteMessage(chatId, lastQrMsgId).catch(() => {});
             lastQrMsgId = null;
             bot.sendMessage(chatId || "System", "✅ **WA TERHUBUNG - /filter cek dulu ya**");
         }
+
+        if (connection === 'close') {
+            const statusCode = lastDisconnect?.error?.output?.statusCode;
+            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+
+            if (statusCode === DisconnectReason.loggedOut) {
+                if (!isLoggedOutNotified) {
+                    bot.sendMessage(chatId || "System", "🚨 **KOK WA KAMU KELUAR YA?**\n\nSilakan /login ulang.");
+                    isLoggedOutNotified = true;
+                }
+                if (fs.existsSync('./session_data')) fs.rmSync('./session_data', { recursive: true, force: true });
+                sock = null;
+            } else if (shouldReconnect) {
+                initWA(chatId, method, phoneNumber, msgToEdit);
+            }
+        }
     });
 
+    // HANDLE PAIRING CODE (Update di tempat yang sama)
     if (method === 'CODE' && phoneNumber && !sock.authState.creds.registered) {
         setTimeout(async () => {
             try {
                 let code = await sock.requestPairingCode(phoneNumber.replace(/[^0-9]/g, ''));
                 const txt = `🔑 **KODE PAIRING ANDA:**\n\n\`${code}\`\n\nMasukkan di WhatsApp Anda.`;
-                if (msgToEdit) {
-                    await bot.editMessageText(txt, { chat_id: chatId, message_id: msgToEdit, parse_mode: 'Markdown' });
+                
+                if (lastQrMsgId) {
+                    await bot.editMessageText(txt, { chat_id: chatId, message_id: lastQrMsgId, parse_mode: 'Markdown' }).catch(() => {});
                 } else {
-                    await bot.sendMessage(chatId, txt, { parse_mode: 'Markdown' });
+                    const sent = await bot.sendMessage(chatId, txt, { parse_mode: 'Markdown' });
+                    lastQrMsgId = sent.message_id;
                 }
             } catch (e) { bot.sendMessage(chatId, "❌ Gagal pairing."); }
         }, 3000);
@@ -100,7 +122,6 @@ bot.onText(/\/start/, (msg) => {
     bot.sendMessage(msg.chat.id, menu, { parse_mode: 'Markdown' });
 });
 
-// FITUR REPORT TERPISAH
 bot.onText(/\/report/, (msg) => {
     const rep = getReport();
     const txt = `📊 **REPORT BLAST HARIAN**\n\n` +
@@ -118,7 +139,8 @@ bot.onText(/\/login/, (msg) => {
 
 bot.on('callback_query', async (q) => {
     const chatId = q.message.chat.id;
-    if (q.data === 'l_qr') { lastQrMsgId = null; initWA(chatId, 'QR'); }
+    lastQrMsgId = null; // Reset id pesan setiap login baru
+    if (q.data === 'l_qr') { initWA(chatId, 'QR'); }
     if (q.data === 'l_cd') {
         userState[chatId] = { step: 'NUM', msgId: q.message.message_id };
         bot.editMessageText("📞 **Masukkan Nomor (628xxx):**", { chat_id: chatId, message_id: q.message.message_id });
@@ -128,7 +150,8 @@ bot.on('callback_query', async (q) => {
 bot.on('message', (msg) => {
     const chatId = msg.chat.id;
     if (userState[chatId]?.step === 'NUM' && msg.text && !msg.text.startsWith('/')) {
-        initWA(chatId, 'CODE', msg.text, userState[chatId].msgId);
+        lastQrMsgId = userState[chatId].msgId; // Simpan message id untuk di-edit nanti
+        initWA(chatId, 'CODE', msg.text, lastQrMsgId);
         delete userState[chatId];
     }
 });
@@ -178,4 +201,5 @@ bot.onText(/\/restart/, async (msg) => {
     if (fs.existsSync('./session_data')) fs.rmSync('./session_data', { recursive: true, force: true });
     sock = null;
     lastQrMsgId = null;
+    isLoggedOutNotified = false;
 });
