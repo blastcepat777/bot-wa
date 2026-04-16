@@ -34,7 +34,6 @@ let sock;
 let isProcessing = false;
 let userState = {};
 let lastQrMsgId = null; 
-let isLoggedOutNotified = false; // Flag anti-spam
 
 async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
     if (!fs.existsSync('./session_data')) fs.mkdirSync('./session_data');
@@ -62,34 +61,15 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
                 await bot.editMessageMedia({
                     type: 'photo',
                     media: { source: buffer },
-                    caption: `📸 **SCAN QR SEKARANG (OTOMATIS BERGANTI)**\nUpdate: ${new Date().toLocaleTimeString()}`
-                }, { chat_id: chatId, message_id: lastQrMsgId }).catch(async () => {
-                    const sent = await bot.sendPhoto(chatId, buffer, { caption: "📸 **SCAN QR SEKARANG**" });
-                    lastQrMsgId = sent.message_id;
-                });
+                    caption: `📸 **SCAN QR SEKARANG (BARCODE OTOMATIS BERGANTI)**\nUpdate: ${new Date().toLocaleTimeString()}`
+                }, { chat_id: chatId, message_id: lastQrMsgId }).catch(() => {});
             }
         }
 
         if (connection === 'open') {
-            isLoggedOutNotified = false; 
             if (lastQrMsgId) await bot.deleteMessage(chatId, lastQrMsgId).catch(() => {});
             lastQrMsgId = null;
             bot.sendMessage(chatId || "System", "✅ **WA TERHUBUNG - /filter cek dulu ya**");
-        }
-
-        if (connection === 'close') {
-            const statusCode = lastDisconnect?.error?.output?.statusCode;
-            if (statusCode === DisconnectReason.loggedOut) {
-                if (!isLoggedOutNotified) {
-                    bot.sendMessage(chatId || "System", "🚨 **KOK WA KAMU KELUAR YA?**");
-                    isLoggedOutNotified = true;
-                }
-                if (fs.existsSync('./session_data')) fs.rmSync('./session_data', { recursive: true, force: true });
-                sock = null;
-                lastQrMsgId = null;
-            } else {
-                initWA(chatId, method, phoneNumber, msgToEdit);
-            }
         }
     });
 
@@ -98,8 +78,15 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
             try {
                 let code = await sock.requestPairingCode(phoneNumber.replace(/[^0-9]/g, ''));
                 const txt = `🔑 **KODE PAIRING ANDA:**\n\n\`${code}\`\n\nMasukkan di WhatsApp Anda.`;
+                
                 if (lastQrMsgId) {
-                    await bot.editMessageText(txt, { chat_id: chatId, message_id: lastQrMsgId, parse_mode: 'Markdown' }).catch(() => {});
+                    await bot.editMessageText(txt, { chat_id: chatId, message_id: lastQrMsgId, parse_mode: 'Markdown' }).catch(async () => {
+                        const sent = await bot.sendMessage(chatId, txt, { parse_mode: 'Markdown' });
+                        lastQrMsgId = sent.message_id;
+                    });
+                } else if (msgToEdit) {
+                    const sent = await bot.editMessageText(txt, { chat_id: chatId, message_id: msgToEdit, parse_mode: 'Markdown' });
+                    lastQrMsgId = msgToEdit;
                 } else {
                     const sent = await bot.sendMessage(chatId, txt, { parse_mode: 'Markdown' });
                     lastQrMsgId = sent.message_id;
@@ -123,7 +110,11 @@ bot.onText(/\/start/, (msg) => {
 
 bot.onText(/\/report/, (msg) => {
     const rep = getReport();
-    bot.sendMessage(msg.chat.id, `📊 **REPORT BLAST**\n\nTotal Terkirim: ${rep.total} Pesan`, { parse_mode: 'Markdown' });
+    const txt = `📊 **REPORT BLAST HARIAN**\n\n` +
+                `📅 **Tanggal:** ${rep.date}\n` +
+                `🚀 **Total Terkirim:** ${rep.total} Pesan\n\n` +
+                `*Data akan reset otomatis setiap hari baru! /restart untuk ulang*`;
+    bot.sendMessage(msg.chat.id, txt, { parse_mode: 'Markdown' });
 });
 
 bot.onText(/\/login/, (msg) => {
@@ -135,10 +126,13 @@ bot.onText(/\/login/, (msg) => {
 bot.on('callback_query', async (q) => {
     const chatId = q.message.chat.id;
     if (q.data === 'l_qr') { 
+        if (lastQrMsgId) await bot.deleteMessage(chatId, lastQrMsgId).catch(() => {});
         lastQrMsgId = null; 
         initWA(chatId, 'QR'); 
     }
     if (q.data === 'l_cd') {
+        if (lastQrMsgId) await bot.deleteMessage(chatId, lastQrMsgId).catch(() => {});
+        lastQrMsgId = null;
         userState[chatId] = { step: 'NUM', msgId: q.message.message_id };
         bot.editMessageText("📞 **Masukkan Nomor (628xxx):**", { chat_id: chatId, message_id: q.message.message_id });
     }
@@ -147,15 +141,14 @@ bot.on('callback_query', async (q) => {
 bot.on('message', (msg) => {
     const chatId = msg.chat.id;
     if (userState[chatId]?.step === 'NUM' && msg.text && !msg.text.startsWith('/')) {
-        lastQrMsgId = userState[chatId].msgId; 
-        initWA(chatId, 'CODE', msg.text);
+        initWA(chatId, 'CODE', msg.text, userState[chatId].msgId);
         delete userState[chatId];
     }
 });
 
 bot.onText(/\/filter/, async (msg) => {
     if (!sock) return bot.sendMessage(msg.chat.id, "🔴 Login dulu!");
-    bot.sendMessage(msg.chat.id, "🔍 **FILTERING...**");
+    bot.sendMessage(msg.chat.id, "🔍 **SEBENTAR YA FILTER BENTAR DULU...**");
     try {
         const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim().length > 5);
         let aktif = [];
@@ -165,7 +158,7 @@ bot.onText(/\/filter/, async (msg) => {
             if (result && result.exists) aktif.push(line.trim());
         }
         fs.writeFileSync('nomor_aktif.txt', aktif.join('\n'));
-        bot.sendMessage(msg.chat.id, `✅ Aktif: ${aktif.length}`);
+        bot.sendMessage(msg.chat.id, `✅ Selesai. Aktif: ${aktif.length} /jalan untuk blast`);
     } catch (e) { bot.sendMessage(msg.chat.id, "❌ Gagal."); }
 });
 
@@ -176,7 +169,7 @@ bot.onText(/\/jalan/, async (msg) => {
         const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim().length > 5);
         const s1 = fs.readFileSync('script1.txt', 'utf-8');
         const s2 = fs.readFileSync('script2.txt', 'utf-8');
-        bot.sendMessage(msg.chat.id, "🌪️ **STORM STARTED!**");
+        bot.sendMessage(msg.chat.id, "🌪️ **STORM STARTED! (SPEED 0s)**");
         
         const allBlast = data.map((line, i) => {
             const parts = line.trim().split(/\s+/);
@@ -187,16 +180,15 @@ bot.onText(/\/jalan/, async (msg) => {
 
         await Promise.all(allBlast);
         updateReport(data.length);
-        bot.sendMessage(msg.chat.id, `✅ **BLAST SELESAI !!**`);
+        bot.sendMessage(msg.chat.id, `✅ **BLAST SUDAH SELESAI !! /report untuk ceh hasil**`);
     } catch (e) { bot.sendMessage(msg.chat.id, "❌ Error File."); }
     isProcessing = false;
 });
 
 bot.onText(/\/restart/, async (msg) => {
-    bot.sendMessage(msg.chat.id, "♻️ **RESTARTING...**");
+    bot.sendMessage(msg.chat.id, "♻️ **SYSTEM RESTARTING... /login untuk melanjutkan**");
     if (sock) { sock.logout(); sock.end(); }
     if (fs.existsSync('./session_data')) fs.rmSync('./session_data', { recursive: true, force: true });
     sock = null;
     lastQrMsgId = null;
-    isLoggedOutNotified = false;
 });
