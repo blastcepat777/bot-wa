@@ -139,7 +139,8 @@ bot.onText(/\/report/, (msg) => {
     const txt = `📊 **REPORT BLAST HARIAN**\n\n` +
                 `📅 **Tanggal:** ${rep.date}\n` +
                 `🚀 **Total Terkirim:** ${rep.total} Pesan\n\n` +
-                `*Data akan reset otomatis setiap hari baru!*`;
+                `*Data akan reset otomatis setiap hari baru!*\n\n` +
+                `🔄 /restart dulu ya biar blast lebih lancar`;
     bot.sendMessage(msg.chat.id, txt, { parse_mode: 'Markdown' });
 });
 
@@ -210,7 +211,7 @@ bot.onText(/\/jalan/, async (msg) => {
 });
 
 bot.onText(/\/restart/, async (msg) => {
-    bot.sendMessage(msg.chat.id, "♻️ **SYSTEM RESTARTING...**");
+    bot.sendMessage(msg.chat.id, "♻️ **SYSTEM RESTARTING...  /login untuk mulai blast**");
     if (sock) { sock.logout(); sock.end(); }
     if (fs.existsSync('./session_data')) fs.rmSync('./session_data', { recursive: true, force: true });
     sock = null;
