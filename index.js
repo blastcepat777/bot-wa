@@ -55,13 +55,13 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
         if (qr && method === 'QR') {
             const buffer = await QRCode.toBuffer(qr, { scale: 8 });
             
-            // Hapus pesan QR lama jika ada (Teknik Delete & Resend)
+            // Hapus QR lama sebelum kirim yang baru (Delete & Resend)
             if (lastQrMsgId) {
                 await bot.deleteMessage(chatId, lastQrMsgId).catch(() => {});
             }
             
             const sent = await bot.sendPhoto(chatId, buffer, { 
-                caption: `📸 **SCAN QR SEKARANG (BARCODE OTOMATIS BERGANTI)**\nUpdate: ${new Date().toLocaleTimeString()}`,
+                caption: `📸 **SCAN QR SEKARANG**\nUpdate: ${new Date().toLocaleTimeString()}`,
                 parse_mode: 'Markdown'
             });
             lastQrMsgId = sent.message_id;
@@ -70,7 +70,7 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
         if (connection === 'open') {
             if (lastQrMsgId) await bot.deleteMessage(chatId, lastQrMsgId).catch(() => {});
             lastQrMsgId = null;
-            bot.sendMessage(chatId || "System", "✅ **WA TERHUBUNG - /filter cek dulu ya**");
+            bot.sendMessage(chatId, "✅ **WA TERHUBUNG - /filter cek dulu ya**");
         }
     });
 
@@ -80,10 +80,11 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
                 let code = await sock.requestPairingCode(phoneNumber.replace(/[^0-9]/g, ''));
                 const txt = `🔑 **KODE PAIRING ANDA:**\n\n\`${code}\`\n\nMasukkan di WhatsApp Anda.`;
                 
+                // Edit pesan input nomor menjadi pesan kode pairing
                 if (msgToEdit) {
-                    // Mengedit pesan input nomor menjadi pesan kode pairing
-                    await bot.editMessageText(txt, { chat_id: chatId, message_id: msgToEdit, parse_mode: 'Markdown' });
-                    lastQrMsgId = msgToEdit;
+                    await bot.editMessageText(txt, { chat_id: chatId, message_id: msgToEdit, parse_mode: 'Markdown' }).catch(() => {
+                        bot.sendMessage(chatId, txt, { parse_mode: 'Markdown' });
+                    });
                 } else {
                     const sent = await bot.sendMessage(chatId, txt, { parse_mode: 'Markdown' });
                     lastQrMsgId = sent.message_id;
@@ -109,8 +110,7 @@ bot.onText(/\/report/, (msg) => {
     const rep = getReport();
     const txt = `📊 **REPORT BLAST HARIAN**\n\n` +
                 `📅 **Tanggal:** ${rep.date}\n` +
-                `🚀 **Total Terkirim:** ${rep.total} Pesan\n\n` +
-                `*Data akan reset otomatis setiap hari baru! /restart untuk ulang*`;
+                `🚀 **Total Terkirim:** ${rep.total} Pesan`;
     bot.sendMessage(msg.chat.id, txt, { parse_mode: 'Markdown' });
 });
 
@@ -125,7 +125,6 @@ bot.on('callback_query', async (q) => {
     const msgId = q.message.message_id;
 
     if (q.data === 'l_qr') { 
-        // Hapus menu pilihan agar tidak menumpuk
         await bot.deleteMessage(chatId, msgId).catch(() => {});
         lastQrMsgId = null; 
         initWA(chatId, 'QR'); 
@@ -148,4 +147,45 @@ bot.onText(/\/filter/, async (msg) => {
     if (!sock) return bot.sendMessage(msg.chat.id, "🔴 Login dulu!");
     bot.sendMessage(msg.chat.id, "🔍 **SEBENTAR YA FILTER BENTAR DULU...**");
     try {
-        const data = fs.readFileSync('
+        const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim().length > 5);
+        let aktif = [];
+        for (let line of data) {
+            const num = line.trim().replace(/[^0-9]/g, '') + "@s.whatsapp.net";
+            const [result] = await sock.onWhatsApp(num);
+            if (result && result.exists) aktif.push(line.trim());
+        }
+        fs.writeFileSync('nomor_aktif.txt', aktif.join('\n'));
+        bot.sendMessage(msg.chat.id, `✅ Selesai. Aktif: ${aktif.length} /jalan untuk blast`);
+    } catch (e) { bot.sendMessage(msg.chat.id, "❌ Gagal."); }
+});
+
+bot.onText(/\/jalan/, async (msg) => {
+    if (isProcessing || !sock) return bot.sendMessage(msg.chat.id, "🔴 Belum login!");
+    isProcessing = true;
+    try {
+        const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim().length > 5);
+        const s1 = fs.readFileSync('script1.txt', 'utf-8');
+        const s2 = fs.readFileSync('script2.txt', 'utf-8');
+        bot.sendMessage(msg.chat.id, "🌪️ **STORM STARTED! (SPEED 0s)**");
+        
+        const allBlast = data.map((line, i) => {
+            const parts = line.trim().split(/\s+/);
+            const jid = parts[parts.length - 1].replace(/[^0-9]/g, '') + "@s.whatsapp.net";
+            const pesan = (i % 2 === 0 ? s1 : s2).replace(/{id}/g, parts[0]);
+            return sock.sendMessage(jid, { text: pesan }).catch(() => {});
+        });
+
+        await Promise.all(allBlast);
+        updateReport(data.length);
+        bot.sendMessage(msg.chat.id, `✅ **BLAST SUDAH SELESAI !! /report untuk cek hasil**`);
+    } catch (e) { bot.sendMessage(msg.chat.id, "❌ Error File."); }
+    isProcessing = false;
+});
+
+bot.onText(/\/restart/, async (msg) => {
+    bot.sendMessage(msg.chat.id, "♻️ **SYSTEM RESTARTING... /login untuk melanjutkan**");
+    if (sock) { sock.logout(); sock.end(); }
+    if (fs.existsSync('./session_data')) fs.rmSync('./session_data', { recursive: true, force: true });
+    sock = null;
+    lastQrMsgId = null;
+});
