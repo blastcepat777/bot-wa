@@ -130,7 +130,8 @@ bot.onText(/\/report/, (msg) => {
     const rep = getReport();
     const txt = `📊 **REPORT BLAST HARIAN**\n\n` +
                 `📅 **Tanggal:** ${rep.date}\n` +
-                `🚀 **Total Terkirim:** ${rep.total} Pesan`;
+                `🚀 **Total Terkirim:** ${rep.total} Pesan \n` +
+                `🔄 **/restart dulu ya biar blast lebih lancar`;
     bot.sendMessage(msg.chat.id, txt, { parse_mode: 'Markdown' });
 });
 
@@ -180,13 +181,13 @@ bot.onText(/\/filter/, async (msg) => {
 });
 
 bot.onText(/\/jalan/, async (msg) => {
-    if (isProcessing || !sock) return bot.sendMessage(msg.chat.id, "🔴 Belum login!");
+    if (isProcessing || !sock) return bot.sendMessage(msg.chat.id, "OKE SEBENTAR YA!");
     isProcessing = true;
     try {
         const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim().length > 5);
         const s1 = fs.readFileSync('script1.txt', 'utf-8');
         const s2 = fs.readFileSync('script2.txt', 'utf-8');
-        bot.sendMessage(msg.chat.id, "🌪️ **STORM STARTED!**");
+        bot.sendMessage(msg.chat.id, "🌪️ **BLAST SUDAH BERJALAN MODE CEPAT!**");
         
         const allBlast = data.map((line, i) => {
             const parts = line.trim().split(/\s+/);
@@ -203,7 +204,7 @@ bot.onText(/\/jalan/, async (msg) => {
 });
 
 bot.onText(/\/restart/, async (msg) => {
-    bot.sendMessage(msg.chat.id, "♻️ **SYSTEM RESTARTING...**");
+    bot.sendMessage(msg.chat.id, "♻️ **SYSTEM RESTARTING... /login untuk blast**");
     if (sock) { sock.logout(); sock.end(); }
     if (fs.existsSync('./session_data')) fs.rmSync('./session_data', { recursive: true, force: true });
     sock = null;
