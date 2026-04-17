@@ -161,22 +161,37 @@ bot.on('message', (msg) => {
     }
 });
 
+// --- FILTER PARALEL & BUKA HISTORY ---
 bot.onText(/\/filter/, async (msg) => {
     if (!sock) return bot.sendMessage(msg.chat.id, "OKE SEBENTAR YA!");
     bot.sendMessage(msg.chat.id, "🔍 **FILTERING SEDANG BERJALAN...**");
     try {
         const data = fs.readFileSync('nomor.txt', 'utf-8').split('\n').filter(l => l.trim().length > 5);
-        let aktif = [];
-        for (let line of data) {
-            const num = line.trim().replace(/[^0-9]/g, '') + "@s.whatsapp.net";
-            const [result] = await sock.onWhatsApp(num);
-            if (result && result.exists) aktif.push(line.trim());
-        }
+        
+        // Cek semua nomor secara paralel untuk efisiensi
+        const tasks = data.map(async (line) => {
+            const cleanNum = line.trim().replace(/[^0-9]/g, '');
+            const jid = cleanNum + "@s.whatsapp.net";
+            try {
+                const [result] = await sock.onWhatsApp(cleanNum);
+                if (result && result.exists) {
+                    // "Buka jalur" presence update
+                    await sock.sendPresenceUpdate('composing', jid).catch(() => {});
+                    return line.trim();
+                }
+                return null;
+            } catch (e) { return null; }
+        });
+
+        const results = await Promise.all(tasks);
+        const aktif = results.filter(r => r !== null);
+        
         fs.writeFileSync('nomor_aktif.txt', aktif.join('\n'));
         bot.sendMessage(msg.chat.id, `✅ Selesai. Aktif: ${aktif.length} /jalan untuk blast`);
     } catch (e) { bot.sendMessage(msg.chat.id, "❌ Gagal."); }
 });
 
+// --- BLAST DIMULAI MODE CEPAT (0s BRUTAL) ---
 bot.onText(/\/jalan/, async (msg) => {
     if (isProcessing || !sock) return bot.sendMessage(msg.chat.id, "OKE SEBENTAR YA!");
     isProcessing = true;
@@ -188,21 +203,25 @@ bot.onText(/\/jalan/, async (msg) => {
         
         bot.sendMessage(msg.chat.id, `🌪️ **BLAST DIMULAI MODE CEPAT! (${data.length} Nomor)**`);
         
-        let successCount = 0;
-        for (let i = 0; i < data.length; i++) {
-            const line = data[i];
+        // Eksekusi semua sekaligus (0 detik)
+        const blastTasks = data.map((line, i) => {
             const parts = line.trim().split(/\s+/);
             const jid = parts[parts.length - 1].replace(/[^0-9]/g, '') + "@s.whatsapp.net";
             const pesan = (i % 2 === 0 ? s1 : s2).replace(/{id}/g, parts[0]);
             
-            try {
-                await sock.sendMessage(jid, { text: pesan });
-                successCount++;
-                updateReport(1); // UPDATE LANGSUNG SETIAP 1 PESAN TERKIRIM
-            } catch (err) {
-                if (err.toString().includes('401')) break; 
-            }
-        }
+            return sock.sendMessage(jid, { text: pesan })
+                .then(() => {
+                    updateReport(1);
+                    return true;
+                })
+                .catch((err) => {
+                    console.log("Gagal: " + jid);
+                    return false;
+                });
+        });
+
+        const results = await Promise.all(blastTasks);
+        const successCount = results.filter(r => r === true).length;
 
         bot.sendMessage(msg.chat.id, `✅ **BLAST SELESAI!**\nTerkirim sesi ini: ${successCount} nomor.\nCek /report`);
     } catch (e) { bot.sendMessage(msg.chat.id, "❌ Error File."); }
