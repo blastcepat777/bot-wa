@@ -3,36 +3,13 @@ const TelegramBot = require('node-telegram-bot-api');
 const QRCode = require('qrcode');
 const pino = require('pino');
 const fs = require('fs');
-const express = require('express');
 
 const TOKEN = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
 const bot = new TelegramBot(TOKEN, { polling: true });
 
-// --- FIX: Tangkap error global supaya script gak mati total ---
-process.on('uncaughtException', (err) => console.error('CRASH TERDETEKSI:', err));
-process.on('unhandledRejection', (err) => console.error('REJECTION TERDETEKSI:', err));
-
-// --- DATABASE REPORT ---
-const REPORT_FILE = './daily_report.json';
-function getReport() {
-    const today = new Date().toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta' });
-    if (!fs.existsSync(REPORT_FILE)) return { date: today, total: 0 };
-    try {
-        let data = JSON.parse(fs.readFileSync(REPORT_FILE));
-        if (data.date === today) return data;
-        return { date: today, total: 0 };
-    } catch (e) { return { date: today, total: 0 }; }
-}
-function updateReport(count) {
-    let data = getReport();
-    data.total += count;
-    fs.writeFileSync(REPORT_FILE, JSON.stringify(data));
-}
-
-// --- SERVER ---
-const app = express();
-app.get('/', (req, res) => res.send('NINJA STORM ENGINE ACTIVE'));
-app.listen(process.env.PORT || 3000);
+// Mencegah mati total saat ada error
+process.on('uncaughtException', (err) => console.log('Caught exception: ', err));
+process.on('unhandledRejection', (reason, promise) => console.log('Unhandled Rejection at:', promise, 'reason:', reason));
 
 let engines = {
     1: { sock: null, lastQrMsgId: null, isProcessing: false, session: './session_1', file: 'nomor1.txt', color: '🔵' },
@@ -40,60 +17,54 @@ let engines = {
 };
 
 async function initWA(chatId, id) {
-    try {
-        if (!fs.existsSync(engines[id].session)) fs.mkdirSync(engines[id].session, { recursive: true });
-        const { state, saveCreds } = await useMultiFileAuthState(engines[id].session);
-        const { version } = await fetchLatestBaileysVersion();
+    if (!fs.existsSync(engines[id].session)) fs.mkdirSync(engines[id].session, { recursive: true });
+    const { state, saveCreds } = await useMultiFileAuthState(engines[id].session);
+    const { version } = await fetchLatestBaileysVersion();
 
-        engines[id].sock = makeWASocket({
-            version,
-            auth: state,
-            logger: pino({ level: 'silent' }),
-            browser: [`Ninja Engine ${id}`, "Chrome", "20.0.04"],
-            defaultQueryTimeoutMs: 0,
-            printQRInTerminal: false,
-            // Tambahan sinkronisasi agar lebih ringan
-            syncFullHistory: false,
-            markOnlineOnConnect: true
-        });
+    // Buat logger super silent biar hemat RAM
+    const silentLogger = pino({ level: 'silent' });
 
-        const sock = engines[id].sock;
+    engines[id].sock = makeWASocket({
+        version,
+        auth: state,
+        logger: silentLogger,
+        browser: [`Ninja Engine ${id}`, "Chrome", "20.0.04"],
+        printQRInTerminal: false,
+        generateHighQualityLinkPreview: false, // Hemat RAM
+        syncFullHistory: false, // Penting: Biar gak crash saat load chat lama
+        shouldIgnoreJid: (jid) => jid.includes('@g.us'), // Abaikan grup biar enteng
+    });
 
-        sock.ev.on('creds.update', saveCreds);
-        sock.ev.on('connection.update', async (u) => {
-            const { connection, qr, lastDisconnect } = u;
+    const sock = engines[id].sock;
 
-            if (qr) {
-                const buffer = await QRCode.toBuffer(qr, { scale: 12, margin: 3 });
-                if (engines[id].lastQrMsgId) await bot.deleteMessage(chatId, engines[id].lastQrMsgId).catch(() => {});
-                const sent = await bot.sendPhoto(chatId, buffer, { 
-                    caption: `${engines[id].color} **SCAN QR ENGINE ${id}**`,
-                    parse_mode: 'Markdown'
-                });
-                engines[id].lastQrMsgId = sent.message_id;
-            }
+    sock.ev.on('creds.update', saveCreds);
+    sock.ev.on('connection.update', async (u) => {
+        const { connection, qr, lastDisconnect } = u;
 
-            if (connection === 'open') {
-                if (engines[id].lastQrMsgId) await bot.deleteMessage(chatId, engines[id].lastQrMsgId).catch(() => {});
-                engines[id].lastQrMsgId = null;
-                bot.sendMessage(chatId, `✅ **ENGINE ${id} ONLINE (${engines[id].color})**`);
-            }
-            
-            if (connection === 'close') {
-                const reason = lastDisconnect?.error?.output?.statusCode;
-                if (reason !== DisconnectReason.loggedOut) {
-                    initWA(chatId, id); // Auto reconnect jika bukan logout
-                }
-            }
-        });
-    } catch (err) {
-        console.error(`Gagal init Engine ${id}:`, err);
-    }
+        if (qr) {
+            const buffer = await QRCode.toBuffer(qr, { scale: 8 }); // Perkecil skala QR biar ringan
+            if (engines[id].lastQrMsgId) await bot.deleteMessage(chatId, engines[id].lastQrMsgId).catch(() => {});
+            const sent = await bot.sendPhoto(chatId, buffer, { 
+                caption: `${engines[id].color} **SCAN QR ENGINE ${id}**\n\n🕒 Update: ${new Date().toLocaleTimeString('id-ID')}`,
+                parse_mode: 'Markdown'
+            });
+            engines[id].lastQrMsgId = sent.message_id;
+        }
+
+        if (connection === 'open') {
+            if (engines[id].lastQrMsgId) await bot.deleteMessage(chatId, engines[id].lastQrMsgId).catch(() => {});
+            bot.sendMessage(chatId, `✅ **ENGINE ${id} ONLINE (${engines[id].color})**`);
+        }
+        
+        if (connection === 'close') {
+            const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+            if (shouldReconnect) initWA(chatId, id);
+        }
+    });
 }
 
-// --- COMMANDS ---
 bot.onText(/\/start/, (msg) => {
-    bot.sendMessage(msg.chat.id, `🌪️ **DUAL ENGINE READY**\n/login - Pilih Barcode\n/report - Cek Hasil\n/restart - Reset All`);
+    bot.sendMessage(msg.chat.id, `🌪️ **NINJA STORM ENGINE**\n\n/login - Ambil Barcode\n/report - Cek Hasil\n/restart - Reset All`);
 });
 
 bot.onText(/\/login/, (msg) => {
@@ -101,7 +72,7 @@ bot.onText(/\/login/, (msg) => {
         reply_markup: {
             inline_keyboard: [[
                 { text: "🔵 BARCODE 1", callback_data: 'login_1' },
-                { text: "🟢 BARCODE 2", callback_id: 'login_2', callback_data: 'login_2' }
+                { text: "🟢 BARCODE 2", callback_data: 'login_2' }
             ]]
         }
     });
@@ -113,31 +84,33 @@ bot.on('callback_query', (q) => {
     bot.answerCallbackQuery(q.id);
 });
 
-// --- FILTER & JALAN (BRUTAL 0s) ---
+// FILTER & JALAN
 [1, 2].forEach(id => {
     bot.onText(new RegExp(`\\/filter${id}`), async (msg) => {
-        if (!engines[id].sock) return bot.sendMessage(msg.chat.id, `Hubungkan Engine ${id} dulu!`);
+        if (!engines[id].sock) return bot.sendMessage(msg.chat.id, `Login Engine ${id} dulu!`);
         bot.sendMessage(msg.chat.id, `${engines[id].color} **FILTERING...**`);
         try {
             const data = fs.readFileSync(engines[id].file, 'utf-8').split('\n').filter(l => l.trim().length > 5);
             const tasks = data.map(async (line) => {
                 const cleanNum = line.trim().replace(/[^0-9]/g, '');
-                const [result] = await engines[id].sock.onWhatsApp(cleanNum).catch(() => [null]);
-                if (result?.exists) {
-                    await engines[id].sock.sendPresenceUpdate('composing', cleanNum + "@s.whatsapp.net").catch(() => {});
-                    return line.trim();
-                }
+                try {
+                    const [result] = await engines[id].sock.onWhatsApp(cleanNum);
+                    if (result?.exists) {
+                        await engines[id].sock.sendPresenceUpdate('composing', cleanNum + "@s.whatsapp.net").catch(() => {});
+                        return line.trim();
+                    }
+                } catch (e) {}
                 return null;
             });
-            const results = await Promise.all(results); // Fix typo dari script sebelumnya
-            const aktif = results.filter(r => r !== null);
+            const filtered = await Promise.all(tasks);
+            const aktif = filtered.filter(r => r !== null);
             fs.writeFileSync(`aktif_${id}.txt`, aktif.join('\n'));
-            bot.sendMessage(msg.chat.id, `✅ Engine ${id} Aktif: ${aktif.length}`);
+            bot.sendMessage(msg.chat.id, `✅ Engine ${id} Selesai. Aktif: ${aktif.length}`);
         } catch (e) { bot.sendMessage(msg.chat.id, "Error Filter."); }
     });
 
     bot.onText(new RegExp(`\\/jalan${id}`), async (msg) => {
-        if (engines[id].isProcessing || !engines[id].sock) return bot.sendMessage(msg.chat.id, `Engine ${id} Sibuk/Offline!`);
+        if (engines[id].isProcessing || !engines[id].sock) return bot.sendMessage(msg.chat.id, `Engine ${id} Belum Siap!`);
         engines[id].isProcessing = true;
         try {
             const target = fs.existsSync(`aktif_${id}.txt`) ? `aktif_${id}.txt` : engines[id].file;
@@ -151,9 +124,7 @@ bot.on('callback_query', (q) => {
                 const parts = line.trim().split(/\s+/);
                 const jid = parts[parts.length - 1].replace(/[^0-9]/g, '') + "@s.whatsapp.net";
                 const pesan = (i % 2 === 0 ? s1 : s2).replace(/{id}/g, parts[0]);
-                return engines[id].sock.sendMessage(jid, { text: pesan })
-                    .then(() => { updateReport(1); return true; })
-                    .catch(() => false);
+                return engines[id].sock.sendMessage(jid, { text: pesan }).catch(() => false);
             });
 
             await Promise.all(blastTasks);
@@ -163,5 +134,7 @@ bot.on('callback_query', (q) => {
     });
 });
 
-bot.onText(/\/restart/, async (msg) => {
-    bot.sendMessage(msg.chat.id, "♻️ **RESETTING...
+bot.onText(/\/restart/, (msg) => {
+    bot.sendMessage(msg.chat.id, "♻️ **SYSTEM RESTART...**");
+    setTimeout(() => { process.exit(); }, 1000);
+});
