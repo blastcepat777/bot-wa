@@ -3,14 +3,13 @@ const TelegramBot = require('node-telegram-bot-api');
 const QRCode = require('qrcode');
 const pino = require('pino');
 const fs = require('fs');
-const express = require('express'); // Tambahan untuk Railway 24 Jam
+const express = require('express');
 
-// --- KONFIGURASI RAILWAY KEEP-ALIVE ---
+// --- RAILWAY 24/7 KEEP-ALIVE ---
 const app = express();
 const PORT = process.env.PORT || 3000;
-app.get('/', (req, res) => res.send('Ninja Storm Engine is Running 24/7 🚀'));
-app.listen(PORT, () => console.log(`Server aktif pada port ${PORT}`));
-// --------------------------------------
+app.get('/', (req, res) => res.send('NINJA STORM ENGINE ACTIVE 🚀'));
+app.listen(PORT, '0.0.0.0', () => console.log(`Server listen on port ${PORT}`));
 
 const TOKEN = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
 const bot = new TelegramBot(TOKEN, { polling: true });
@@ -55,6 +54,7 @@ async function initWA(chatId, id) {
         browser: ["Ninja Storm", "Chrome", "1.0.0"],
         syncFullHistory: false, 
         printQRInTerminal: false,
+        qrTimeout: 30000,
         connectTimeoutMs: 60000 
     });
 
@@ -77,7 +77,6 @@ async function initWA(chatId, id) {
                 };
 
                 const caption = `${engines[id].color} **SCAN QR ENGINE ${id} SEKARANG !!**\n\n🕒 Update: ${new Date().toLocaleTimeString('id-ID')}`;
-
                 const sent = await bot.sendPhoto(chatId, buffer, { caption, parse_mode: 'Markdown', reply_markup: markup });
                 
                 if (engines[id].lastQrMsgId) {
@@ -89,7 +88,6 @@ async function initWA(chatId, id) {
 
         if (connection === 'open') {
             engines[id].isInitializing = false;
-            console.log(`Engine ${id} connected!`);
             if (engines[id].lastQrMsgId && chatId) {
                 await bot.deleteMessage(chatId, engines[id].lastQrMsgId).catch(() => {});
                 engines[id].lastQrMsgId = null;
@@ -109,10 +107,9 @@ async function initWA(chatId, id) {
     });
 }
 
-// AUTO-RECONNECT 24 JAM SAAT RESTART
+// AUTO-RUN RAILWAY
 Object.keys(engines).forEach(id => {
     if (fs.existsSync(engines[id].session)) {
-        console.log(`Auto-loading Engine ${id}...`);
         initWA(null, id); 
     }
 });
@@ -123,11 +120,9 @@ bot.on('callback_query', async (q) => {
     const data = q.data;
 
     if (data === 'restart_bot') {
-        await bot.sendMessage(chatId, "♻️ **SUDAH BERHASIL DI RESTART...**", {
-            reply_markup: { inline_keyboard: loginKeyboard }
-        });
-        setTimeout(() => process.exit(), 1000);
-        return bot.answerCallbackQuery(q.id);
+        await bot.sendMessage(chatId, "♻️ **ENGINE REBOOTING...**");
+        setTimeout(() => process.exit(), 500);
+        return;
     }
 
     if (data === 'cmd_login') {
@@ -141,8 +136,7 @@ bot.on('callback_query', async (q) => {
 
     if (data.startsWith('login_')) {
         const id = data.split('_')[1];
-        if (engines[id].isInitializing) return bot.answerCallbackQuery(q.id, { text: "Sabar Bos, lagi disiapkan..." });
-        
+        if (engines[id].isInitializing) return bot.answerCallbackQuery(q.id, { text: "Sabar Bos..." });
         const prepMsg = await bot.sendMessage(chatId, `⏳ **Menyiapkan QR Engine ${id}...**`);
         engines[id].lastQrMsgId = prepMsg.message_id;
         initWA(chatId, id);
@@ -151,7 +145,7 @@ bot.on('callback_query', async (q) => {
     if (data.startsWith('filter_')) {
         const id = data.split('_')[1];
         if (!engines[id].sock) return bot.sendMessage(chatId, `❌ Engine ${id} Belum Login!`);
-        bot.sendMessage(chatId, `${engines[id].color} **FILTER ENGINE ${id} MULAI...**`);
+        bot.sendMessage(chatId, `${engines[id].color} **FILTER ENGINE ${id} RUNNING...**`);
         try {
             const lines = fs.readFileSync(engines[id].file, 'utf-8').split('\n').filter(l => l.trim().length > 5);
             let aktif = [];
@@ -161,14 +155,50 @@ bot.on('callback_query', async (q) => {
                 if (res?.exists) aktif.push(line.trim());
             }
             fs.writeFileSync(`aktif_${id}.txt`, aktif.join('\n'));
-            
-            bot.sendMessage(chatId, `✅ **FILTER ${id} SELESAI**\nAktif: ${aktif.length}\n\nSilahkan Pilih:`, {
+            bot.sendMessage(chatId, `✅ **FILTER SELESAI**\nAktif: ${aktif.length}`, {
                 reply_markup: {
                     inline_keyboard: [
                         [{ text: `🚀 JALAN BLAST ${id}`, callback_data: `jalan_${id}` }],
-                        [{ text: "♻️ RESTART", callback_data: 'restart_bot' }],
-                        [{ text: "❌ KELUAR", callback_data: 'batal' }]
+                        [{ text: "♻️ RESTART", callback_data: 'restart_bot' }]
                     ]
                 }
             });
-        } catch
+        } catch (e) { bot.sendMessage(chatId, `❌ File Error.`); }
+    }
+
+    if (data.startsWith('jalan_')) {
+        const id = data.split('_')[1];
+        const engine = engines[id];
+        if (!engine.sock) return;
+        
+        try {
+            const numbers = fs.readFileSync(`aktif_${id}.txt`, 'utf-8').split('\n').filter(l => l.trim().length > 5);
+            const pesanBlast = fs.readFileSync(engine.script, 'utf-8');
+            
+            bot.sendMessage(chatId, `🚀 **NINJA STORM: BOMBARDIR ${numbers.length} NOMOR...**`);
+
+            // --- TRUE FIRE & FORGET BLASTING (SUPER KENCANG) ---
+            for (let line of numbers) {
+                const jid = line.replace(/[^0-9]/g, '') + "@s.whatsapp.net";
+                // Langsung kirim tanpa await, biarkan socket engine yang mengurus antrean internal
+                engine.sock.sendMessage(jid, { text: pesanBlast }).catch(() => {});
+            }
+
+            bot.sendMessage(chatId, `✅ **BOM SELESAI DILEPASKAN!**`);
+        } catch (e) { bot.sendMessage(chatId, `❌ Blast Gagal.`); }
+    }
+    bot.answerCallbackQuery(q.id);
+});
+
+bot.onText(/\/start/, (msg) => sendMenuUtama(msg.chat.id));
+bot.onText(/\/login/, (msg) => {
+    bot.sendMessage(msg.chat.id, "🚀 Pilih Engine:", {
+        reply_markup: {
+            inline_keyboard: [[{ text: "🌪 QR1", callback_data: 'login_1' }, { text: "🌊 QR2", callback_data: 'login_2' }]]
+        }
+    });
+});
+bot.onText(/\/restart/, (msg) => {
+    bot.sendMessage(msg.chat.id, "♻️ **RESTARTING...**");
+    setTimeout(() => process.exit(), 500);
+});
