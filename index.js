@@ -10,15 +10,26 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 process.on('uncaughtException', (err) => console.log('Error: ', err.message));
 process.on('unhandledRejection', (reason) => console.log('Rejection: ', reason));
 
+let stats = { totalBlast: 0 };
 let engines = {
     1: { sock: null, lastQrMsgId: null, session: './session_1', file: 'nomor1.txt', color: '🌪', menuSent: false, isInitializing: false },
     2: { sock: null, lastQrMsgId: null, session: './session_2', file: 'nomor2.txt', color: '🌊', menuSent: false, isInitializing: false }
 };
 
-const loginKeyboard = [[{ text: "🚀 LOGIN", callback_data: 'cmd_login' }]];
+// --- KEYBOARD PERMANEN (DI BAWAH TYPING) ---
+const menuBawah = {
+    reply_markup: {
+        keyboard: [
+            [{ text: "📊 LAPORAN HARIAN" }],
+            [{ text: "♻️ RESTART" }, { text: "🛡️ CEK STATUS WA" }]
+        ],
+        resize_keyboard: true,
+        one_time_keyboard: false
+    }
+};
 
 const sendMenuUtama = (chatId) => {
-    bot.sendMessage(chatId, `🌪️ **NINJA STORM ENGINE**\n\n/login - Ambil Barcode\n/restart - Reset All`);
+    bot.sendMessage(chatId, `🌪️ **NINJA STORM ENGINE**\n\n/login - Ambil Barcode\n/restart - Reset All`, menuBawah);
 };
 
 const sendMenuEngine = (chatId, id) => {
@@ -27,7 +38,6 @@ const sendMenuEngine = (chatId, id) => {
             inline_keyboard: [
                 [{ text: `🔍 FILTER NOMOR ${id}`, callback_data: `filter_${id}` }],
                 [{ text: `🚀 JALAN BLAST ${id}`, callback_data: `jalan_${id}` }],
-                [{ text: "♻️ RESTART", callback_data: 'restart_bot' }],
                 [{ text: "❌ KELUAR", callback_data: 'batal' }]
             ]
         }
@@ -57,21 +67,19 @@ async function initWA(chatId, id) {
     sock.ev.on('connection.update', async (u) => {
         const { connection, qr, lastDisconnect } = u;
 
-        if (qr) {
+        if (qr && chatId) {
             try {
                 const buffer = await QRCode.toBuffer(qr, { scale: 4 }); 
                 const otherId = id == 1 ? 2 : 1;
                 const markup = {
                     inline_keyboard: [
                         [{ text: `(ON)${engines[otherId].color} QR${otherId}`, callback_data: `login_${otherId}` }],
-                        [{ text: "♻️ RESTART", callback_data: 'restart_bot' }],
                         [{ text: "❌ CANCEL", callback_data: 'batal' }]
                     ]
                 };
 
                 const caption = `${engines[id].color} **SCAN QR ENGINE ${id} SEKARANG !!**\n\n🕒 Update: ${new Date().toLocaleTimeString('id-ID')}`;
 
-                // Kirim barcode dulu baru hapus pesan "Menyiapkan" agar tidak crash
                 const sent = await bot.sendPhoto(chatId, buffer, { caption, parse_mode: 'Markdown', reply_markup: markup });
                 
                 if (engines[id].lastQrMsgId) {
@@ -83,11 +91,11 @@ async function initWA(chatId, id) {
 
         if (connection === 'open') {
             engines[id].isInitializing = false;
-            if (engines[id].lastQrMsgId) {
+            if (engines[id].lastQrMsgId && chatId) {
                 await bot.deleteMessage(chatId, engines[id].lastQrMsgId).catch(() => {});
                 engines[id].lastQrMsgId = null;
             }
-            if (!engines[id].menuSent) {
+            if (!engines[id].menuSent && chatId) {
                 sendMenuEngine(chatId, id);
                 engines[id].menuSent = true;
             }
@@ -102,18 +110,33 @@ async function initWA(chatId, id) {
     });
 }
 
+// --- MESSAGE HANDLER UNTUK KEYBOARD BAWAH ---
+bot.on('message', async (msg) => {
+    const chatId = msg.chat.id;
+    const text = msg.text;
+
+    if (text === "📊 LAPORAN HARIAN") {
+        bot.sendMessage(chatId, `📊 **LAPORAN BLAST**\nTotal Berhasil: ${stats.totalBlast}`, menuBawah);
+    }
+
+    if (text === "🛡️ CEK STATUS WA") {
+        let status = "🛡️ **STATUS ENGINE**\n\n";
+        for (let i = 1; i <= 2; i++) {
+            status += `${engines[i].color} Engine ${i}: ${engines[i].sock?.user ? "✅ ONLINE" : "❌ OFFLINE"}\n`;
+        }
+        bot.sendMessage(chatId, status, menuBawah);
+    }
+
+    if (text === "♻️ RESTART") {
+        await bot.sendMessage(chatId, "♻️ **SYSTEM RESTARTING...**", { reply_markup: { remove_keyboard: true } });
+        setTimeout(() => process.exit(0), 1000);
+    }
+});
+
 bot.on('callback_query', async (q) => {
     const chatId = q.message.chat.id;
     const msgId = q.message.message_id;
     const data = q.data;
-
-    if (data === 'restart_bot') {
-        await bot.sendMessage(chatId, "♻️ **SUDAH BERHASIL DI RESTART...**", {
-            reply_markup: { inline_keyboard: loginKeyboard }
-        });
-        setTimeout(() => process.exit(), 1000);
-        return bot.answerCallbackQuery(q.id);
-    }
 
     if (data === 'cmd_login') {
         return bot.editMessageText("🚀 Pilih Engine:", {
@@ -166,14 +189,11 @@ bot.on('callback_query', async (q) => {
             const lines = fs.readFileSync(fileName, 'utf-8').split('\n').filter(l => l.trim().length > 5);
             bot.sendMessage(chatId, `🚀 **BLAST ENGINE ${id} JALAN...**`);
 
-            // NINJA MODE: PARALLEL BLAST (0 DETIK JEDA)
             Promise.all(lines.map(line => {
                 const num = line.replace(/[^0-9]/g, '') + "@s.whatsapp.net";
-                return engines[id].sock.sendMessage(num, { text: "Pesan Blast Ninja Storm!" }).catch(() => {});
+                return engines[id].sock.sendMessage(num, { text: "Pesan Blast Ninja Storm!" }).then(() => stats.totalBlast++).catch(() => {});
             })).then(() => {
-                bot.sendMessage(chatId, `✅ **BLAST ${id} SELESAI!**`, {
-                    reply_markup: { inline_keyboard: [[{ text: "♻️ RESTART", callback_data: 'restart_bot' }]] }
-                });
+                bot.sendMessage(chatId, `✅ **BLAST ${id} SELESAI!**`);
             });
         } catch (e) { console.log(e); }
     }
@@ -189,8 +209,6 @@ bot.onText(/\/login/, (msg) => {
     });
 });
 bot.onText(/\/restart/, (msg) => {
-    bot.sendMessage(msg.chat.id, "♻️ **SUDAH BERHASIL DI RESTART...**", {
-        reply_markup: { inline_keyboard: loginKeyboard }
-    });
-    setTimeout(() => process.exit(), 1000);
+    bot.sendMessage(msg.chat.id, "♻️ **SYSTEM RESTARTING...**");
+    setTimeout(() => process.exit(0), 1000);
 });
