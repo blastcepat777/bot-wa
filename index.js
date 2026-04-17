@@ -1,20 +1,21 @@
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, makeCacheableSignalKeyStore } = require("@whiskeysockets/baileys");
 const TelegramBot = require('node-telegram-bot-api');
-const QRCode = require('qrcode');
 const pino = require('pino');
 const fs = require('fs');
 
 const TOKEN = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
 const bot = new TelegramBot(TOKEN, { polling: true });
 
-// Data Stats
-let stats = { totalBlast: 0, hariIni: 0 };
+// Proteksi Anti-Crash Global
+process.on('uncaughtException', (err) => console.log('Sistem Aman dari Crash:', err.message));
+process.on('unhandledRejection', (reason) => console.log('Rejection Aman:', reason));
+
+let stats = { totalBlast: 0, hariIni: 0, terahirUpdate: new Date().toLocaleDateString('id-ID') };
 let engines = {
-    1: { sock: null, lastQrMsgId: null, session: './session_1', color: '🌪', isInitializing: false },
-    2: { sock: null, lastQrMsgId: null, session: './session_2', color: '🌊', isInitializing: false }
+    1: { sock: null, session: './session_1', color: '🌪', isInitializing: false, waitingNumber: false },
+    2: { sock: null, session: './session_2', color: '🌊', isInitializing: false, waitingNumber: false }
 };
 
-// Keyboard Menu Utama
 const menuBawah = {
     reply_markup: {
         keyboard: [[{ text: "📊 LAPORAN HARIAN" }, { text: "♻️ RESTART" }, { text: "🛡️ CEK STATUS WA" }]],
@@ -23,22 +24,17 @@ const menuBawah = {
     }
 };
 
-async function initWA(chatId, id) {
-    // LOCK: Mencegah klik ganda yang bikin muter
+async function initWA(chatId, id, phoneNumber) {
     if (engines[id].isInitializing) return;
     engines[id].isInitializing = true;
 
-    // Bersihkan sesi lama supaya fresh
+    // Bersihkan sesi lama agar fresh saat pairing baru
     if (fs.existsSync(engines[id].session)) {
         try { fs.rmSync(engines[id].session, { recursive: true, force: true }); } catch (e) {}
     }
 
     const { state, saveCreds } = await useMultiFileAuthState(engines[id].session);
     const { version } = await fetchLatestBaileysVersion();
-
-    if (engines[id].sock) {
-        try { engines[id].sock.terminate(); } catch (e) {}
-    }
 
     engines[id].sock = makeWASocket({
         version,
@@ -47,95 +43,70 @@ async function initWA(chatId, id) {
             keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' })),
         },
         logger: pino({ level: 'silent' }),
-        browser: ["Ninja Storm", "MacOS", "3.0.0"], // MacOS lebih stabil untuk pairing
+        browser: ["Ubuntu", "Chrome", "20.0.04"], // Browser standar untuk pairing
         syncFullHistory: false,
         shouldSyncHistoryMessage: () => false,
-        connectTimeoutMs: 60000,
-        receivedPendingNotifications: false,
+        connectTimeoutMs: 60000
     });
+
+    // --- LOGIKA REQUEST PAIRING CODE ---
+    if (!engines[id].sock.authState.creds.registered) {
+        setTimeout(async () => {
+            try {
+                let code = await engines[id].sock.requestPairingCode(phoneNumber);
+                code = code?.match(/.{1,4}/g)?.join('-') || code; // Format XXXX-XXXX
+                
+                bot.sendMessage(chatId, 
+                    `${engines[id].color} **KODE PAIRING ENGINE ${id}**\n\n` +
+                    `Nomor: \`${phoneNumber}\`\n` +
+                    `Kode: \`${code}\`\n\n` +
+                    `**CARA INPUT:**\n` +
+                    `1. Buka WA > Perangkat Tertaut.\n` +
+                    `2. Pilih **Tautkan Perangkat**.\n` +
+                    `3. Klik **"Tautkan dengan nomor telepon saja"** di bagian bawah.\n` +
+                    `4. Masukkan kode di atas.`, 
+                    { parse_mode: 'Markdown' }
+                );
+            } catch (err) {
+                bot.sendMessage(chatId, `❌ Gagal meminta kode: ${err.message}`);
+                engines[id].isInitializing = false;
+            }
+        }, 3000);
+    }
 
     engines[id].sock.ev.on('creds.update', saveCreds);
 
-    engines[id].sock.ev.on('connection.update', async (update) => {
-        const { connection, qr, lastDisconnect } = update;
-
-        if (qr) {
-            try {
-                // QR dibuat sedikit lebih besar agar mudah di-scan
-                const buffer = await QRCode.toBuffer(qr, { scale: 6, margin: 3, errorCorrectionLevel: 'M' });
-                
-                // Kirim QR baru dulu
-                const sent = await bot.sendPhoto(chatId, buffer, { 
-                    caption: `${engines[id].color} **SCAN QR ENGINE ${id} SEKARANG**\n_Expired dalam 45 detik..._`,
-                    parse_mode: 'Markdown'
-                });
-
-                // Baru hapus pesan lama (Kunci agar tidak muter/lag)
-                if (engines[id].lastQrMsgId) {
-                    await bot.deleteMessage(chatId, engines[id].lastQrMsgId).catch(() => {});
-                }
-                engines[id].lastQrMsgId = sent.message_id;
-            } catch (e) { console.log("Gagal buat QR"); }
-        }
+    engines[id].sock.ev.on('connection.update', async (u) => {
+        const { connection, lastDisconnect } = u;
 
         if (connection === 'open') {
             engines[id].isInitializing = false;
-            if (engines[id].lastQrMsgId) await bot.deleteMessage(chatId, engines[id].lastQrMsgId).catch(() => {});
-            bot.sendMessage(chatId, `✅ **ENGINE ${id} ONLINE!**\nSistem siap digunakan Bos.`, menuBawah);
+            bot.sendMessage(chatId, `✅ **ENGINE ${id} BERHASIL TERHUBUNG!**\nSistem siap digunakan Bos.`, menuBawah);
         }
 
         if (connection === 'close') {
             engines[id].isInitializing = false;
-            const code = lastDisconnect?.error?.output?.statusCode;
-            if (code !== DisconnectReason.loggedOut) {
-                setTimeout(() => initWA(chatId, id), 5000);
+            const reason = lastDisconnect?.error?.output?.statusCode;
+            if (reason !== DisconnectReason.loggedOut) {
+                console.log(`Engine ${id} terputus, mencoba perbaikan...`);
             }
         }
     });
 }
 
-// --- HANDLER PESAN TEKS ---
-bot.on('message', async (msg) => {
-    const chatId = msg.chat.id;
-    const text = msg.text;
-
-    if (text === "📊 LAPORAN HARIAN") {
-        bot.sendMessage(chatId, `📊 **STATISTIK BLAST**\n\n- Hari Ini: ${stats.hariIni}\n- Total: ${stats.totalBlast}`, menuBawah);
-    }
-
-    if (text === "♻️ RESTART") {
-        await bot.sendMessage(chatId, "♻️ **SYSTEM RESTARTING...**");
-        setTimeout(() => process.exit(0), 1000);
-    }
-
-    if (text === "🛡️ CEK STATUS WA") {
-        let status = "🛡️ **STATUS KONEKSI**\n\n";
-        for (let i = 1; i <= 2; i++) {
-            status += `${engines[i].color} Engine ${i}: ${engines[i].sock?.user ? "✅ ONLINE" : "❌ OFFLINE"}\n`;
-        }
-        bot.sendMessage(chatId, status, menuBawah);
-    }
-});
-
-// --- HANDLER TOMBOL ---
-bot.on('callback_query', (q) => {
+// --- HANDLER CALLBACK ---
+bot.on('callback_query', async (q) => {
     const chatId = q.message.chat.id;
-    if (q.data.startsWith('login_')) {
-        const id = q.data.split('_')[1];
-        bot.sendMessage(chatId, `⏳ Menyiapkan Engine ${id}...`);
-        initWA(chatId, id);
+    const msgId = q.message.message_id;
+
+    if (q.data === 'cmd_login') {
+        bot.editMessageText("🚀 Pilih Engine untuk Pairing:", {
+            chat_id: chatId, message_id: msgId,
+            reply_markup: { inline_keyboard: [[{ text: "🌪 PAIR 1", callback_data: 'pair_1' }, { text: "🌊 PAIR 2", callback_data: 'pair_2' }]] }
+        });
     }
-    bot.answerCallbackQuery(q.id);
-});
 
-bot.onText(/\/login/, (msg) => {
-    bot.sendMessage(msg.chat.id, "🚀 Pilih Engine untuk Login:", {
-        reply_markup: { 
-            inline_keyboard: [[{ text: "🌪 Engine 1", callback_data: 'login_1' }, { text: "🌊 Engine 2", callback_data: 'login_2' }]]
-        }
-    });
-});
-
-bot.onText(/\/start/, (msg) => {
-    bot.sendMessage(msg.chat.id, "🌪️ **NINJA STORM ENGINE READY**\nKlik menu di bawah atau ketik /login", menuBawah);
-});
+    if (q.data.startsWith('pair_')) {
+        const id = q.data.split('_')[1];
+        engines[id].waitingNumber = true;
+        bot.sendMessage(chatId, `${engines[id].color} **INPUT NOMOR ENGINE ${id}**\n\nSilahkan
