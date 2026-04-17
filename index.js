@@ -45,7 +45,7 @@ async function initWA(chatId, id) {
             const buffer = await QRCode.toBuffer(qr, { scale: 8 }); // Perkecil skala QR biar ringan
             if (engines[id].lastQrMsgId) await bot.deleteMessage(chatId, engines[id].lastQrMsgId).catch(() => {});
             const sent = await bot.sendPhoto(chatId, buffer, { 
-                caption: `${engines[id].color} **SCAN QR ENGINE ${id}**\n\n🕒 Update: ${new Date().toLocaleTimeString('id-ID')}`,
+                caption: `${engines[id].color} **SCAN QR SEKARANG !! ${id}**\n\n🕒 Update: ${new Date().toLocaleTimeString('id-ID')}`,
                 parse_mode: 'Markdown'
             });
             engines[id].lastQrMsgId = sent.message_id;
@@ -68,11 +68,11 @@ bot.onText(/\/start/, (msg) => {
 });
 
 bot.onText(/\/login/, (msg) => {
-    bot.sendMessage(msg.chat.id, "Pilih Engine:", {
+    bot.sendMessage(msg.chat.id, "🚀 Silahkan Dipilih Barcode Dibawah Ini :", {
         reply_markup: {
             inline_keyboard: [[
-                { text: "🔵 BARCODE 1", callback_data: 'login_1' },
-                { text: "🟢 BARCODE 2", callback_data: 'login_2' }
+                { text: "(ON)🌪 BARCODE WA 1", callback_data: 'login_1' },
+                { text: "(ON)🌊 BARCODE WA 2", callback_data: 'login_2' }
             ]]
         }
     });
@@ -135,6 +135,6 @@ bot.on('callback_query', (q) => {
 });
 
 bot.onText(/\/restart/, (msg) => {
-    bot.sendMessage(msg.chat.id, "♻️ **SYSTEM RESTART...**");
+    bot.sendMessage(msg.chat.id, "♻️ **SYSTEM RESTART... /login untuk blast**");
     setTimeout(() => { process.exit(); }, 1000);
 });
