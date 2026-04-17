@@ -67,4 +67,72 @@ async function initWA(chatId, id) {
             const buffer = await QRCode.toBuffer(qr, { scale: 4 });
             const sekarang = new Date();
             const caption = `${engines[id].color} **SCAN QR ENGINE ${id}**\n\n` +
-                            `📅 **Tanggal:** ${sekarang.
+                            `📅 **Tanggal:** ${sekarang.toLocaleDateString('id-ID')}\n` +
+                            `⌚ **Update Jam:** ${sekarang.toLocaleTimeString('id-ID')}\n\n` +
+                            `_Jika mutar terus, klik RESTART di bawah._`;
+
+            const markup = {
+                inline_keyboard: [
+                    [{ text: `(ON) QR ${id == 1 ? 2 : 1}`, callback_data: `login_${id == 1 ? 2 : 1}` }],
+                    [{ text: "❌ CANCEL", callback_data: 'batal' }]
+                ]
+            };
+
+            await safeDelete(chatId, engines[id].lastQrMsgId);
+            const sent = await bot.sendPhoto(chatId, buffer, { caption, reply_markup: markup, parse_mode: 'Markdown' });
+            engines[id].lastQrMsgId = sent.message_id;
+        }
+
+        if (connection === 'open') {
+            await safeDelete(chatId, engines[id].lastQrMsgId);
+            bot.sendMessage(chatId, `${engines[id].color} **ENGINE ${id} ONLINE** ✅`, {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: `🔍 FILTER 1`, callback_data: `filter_1` }, { text: `🔍 FILTER 2`, callback_data: `filter_2` }],
+                        [{ text: "❌ CANCEL", callback_data: 'batal' }]
+                    ]
+                }
+            });
+        }
+
+        if (connection === 'close') {
+            const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+            if (!shouldReconnect) {
+                engines[id].sock = null; // Reset sock jika logout total
+            } else {
+                initWA(chatId, id);
+            }
+        }
+    });
+}
+
+// --- HANDLER BUTTONS ---
+bot.on('callback_query', async (q) => {
+    const chatId = q.message.chat.id;
+    const data = q.data;
+
+    if (data.startsWith('login_')) {
+        const id = data.split('_')[1];
+        bot.answerCallbackQuery(q.id, { text: "Meminta Barcode baru..." });
+        initWA(chatId, id);
+    }
+    
+    // Handler filter, jalan_blast, batal, dll (sama seperti sebelumnya)
+    if (data === 'batal') {
+        await safeDelete(chatId, q.message.message_id);
+        bot.sendMessage(chatId, "❌ Dibatalkan.", menuBawah);
+    }
+});
+
+bot.on('message', async (msg) => {
+    if (msg.text === "♻️ RESTART") {
+        await bot.sendMessage(msg.chat.id, "♻️ **SYSTEM RESTART...** Folder session dibersihkan.");
+        // Hapus semua session saat restart manual agar tidak stuck
+        clearSession('./session_1');
+        clearSession('./session_2');
+        setTimeout(() => process.exit(0), 1000);
+    }
+    // Handler status dan laporan...
+});
+
+bot.onText(/\/start/, (msg) => bot.sendMessage(msg.chat.id, `🌪️ **NINJA STORM ENGINE READY**`, menuBawah));
