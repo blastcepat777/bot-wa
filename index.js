@@ -2,7 +2,9 @@ async function initWA(chatId, id) {
     // FIX: Bersihkan sesi lama jika engine belum terhubung agar QR tidak mutar
     if (!engines[id].sock?.user) {
         if (fs.existsSync(engines[id].session)) {
-            try { fs.rmSync(engines[id].session, { recursive: true, force: true }); } catch (e) {}
+            try {
+                fs.rmSync(engines[id].session, { recursive: true, force: true });
+            } catch (e) {}
         }
     }
 
@@ -13,13 +15,21 @@ async function initWA(chatId, id) {
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
-        // --- PERBAIKAN UTAMA: IDENTITAS BROWSER STANDAR & OPTIMASI ---
-        browser: ["Ubuntu", "Chrome", "20.0.04"], 
-        syncFullHistory: false, // Jangan tarik history lama agar scan cepat selesai
-        markOnlineOnConnect: true,
-        connectTimeoutMs: 60000, 
+        // --- PERBAIKAN BARCODE DISINI ---
+        browser: ["Mac OS", "Chrome", "10.15.7"], // Browser lebih standar
+        syncFullHistory: false,                   // Mempercepat proses pairing setelah scan
+        qrTimeout: 40000,                         // Memberi waktu scan lebih lama sebelum ganti QR
+        connectTimeoutMs: 60000,
         defaultQueryTimeoutMs: 0,
-        keepAliveIntervalMs: 10000
+        keepAliveIntervalMs: 10000,
+        generateHighQualityLinkPreview: false,
+        patchMessageBeforeSending: (message) => {
+            const requiresPatch = !!(message.buttonsMessage || message.templateMessage || message.listMessage);
+            if (requiresPatch) {
+                message = { viewOnceMessage: { message: { messageContextInfo: { deviceListMetadataVersion: 2, deviceListMetadata: {}, }, ...message, }, }, };
+            }
+            return message;
+        },
     });
 
     engines[id].sock.ev.on('creds.update', saveCreds);
