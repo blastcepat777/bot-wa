@@ -37,13 +37,12 @@ const safeDelete = async (chatId, msgId) => {
 // --- FUNGSI UPDATE QR DENGAN JAM & TANGGAL ---
 async function sendOrUpdateQR(chatId, id, buffer) {
     const sekarang = new Date();
-    // FIX: Menggunakan timezone Asia/Jakarta agar jam sesuai lokal Bos
     const tanggal = sekarang.toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
     const jam = sekarang.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Jakarta' });
 
     const otherId = id == 1 ? 2 : 1;
     const caption = `${engines[id].color} **SCAN QR ENGINE ${id} SEKARANG !!**\n\n` +
-                    `📅 **Tanggal:** ${tanggal}\n` +
+                    `📅 **Tanggal:** ${tanggal}\n` + 
                     `⌚ **Update Jam:** ${jam}\n\n` +
                     `_Segera scan sebelum barcode kadaluarsa!_`;
 
@@ -60,6 +59,11 @@ async function sendOrUpdateQR(chatId, id, buffer) {
 }
 
 async function initWA(chatId, id) {
+    // --- FORCE CLEAR SESSION SEBELUM LOGIN (Agar tidak muter) ---
+    if (fs.existsSync(engines[id].session)) {
+        try { fs.rmSync(engines[id].session, { recursive: true, force: true }); } catch (e) {}
+    }
+
     const { state, saveCreds } = await useMultiFileAuthState(engines[id].session);
     const { version } = await fetchLatestBaileysVersion();
 
@@ -68,25 +72,28 @@ async function initWA(chatId, id) {
         auth: state,
         logger: pino({ level: 'silent' }),
         browser: ["Ninja Storm", "Chrome", "1.0.0"],
-        // FIX: Matikan sinkronisasi riwayat agar tidak "muter" saat scan
+        // --- OPTIMASI KONEKSI ---
         syncFullHistory: false,
         shouldSyncHistoryMessage: () => false,
+        patchMessageBeforeSending: (message) => message,
+        getMessage: async () => { return { conversation: 'Ninja Storm Engine' } },
         connectTimeoutMs: 60000,
-        defaultQueryTimeoutMs: 0
+        defaultQueryTimeoutMs: 0,
+        keepAliveIntervalMs: 10000
     });
 
     engines[id].sock.ev.on('creds.update', saveCreds);
     engines[id].sock.ev.on('connection.update', async (u) => {
-        const { connection, qr } = u;
+        const { connection, qr, lastDisconnect } = u;
+        
         if (qr) {
-            // FIX: Scale dinaikkan sedikit ke 6 (tidak kekecilan/kebesaran) agar fokus kamera cepat
+            // Ukuran scale 6 ideal untuk fokus kamera
             const buffer = await QRCode.toBuffer(qr, { scale: 6, margin: 2 });
             await sendOrUpdateQR(chatId, id, buffer);
         }
+
         if (connection === 'open') {
             await safeDelete(chatId, engines[id].lastQrMsgId);
-            
-            // --- FIX: TAMPILKAN TOMBOL FILTER 1 & FILTER 2 SEJAJAR ---
             bot.sendMessage(chatId, `${engines[id].color} **ENGINE ${id} ONLINE** ✅\nSilahkan pilih filter:`, {
                 reply_markup: {
                     inline_keyboard: [
@@ -98,6 +105,13 @@ async function initWA(chatId, id) {
                     ]
                 }
             });
+        }
+
+        if (connection === 'close') {
+            const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+            if (shouldReconnect) {
+                setTimeout(() => initWA(chatId, id), 5000);
+            }
         }
     });
 }
