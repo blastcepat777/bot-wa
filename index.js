@@ -15,18 +15,16 @@ let engines = {
     2: { sock: null, lastQrMsgId: null, session: './session_2', color: '🌊' }
 };
 
-// --- TOMBOL MENU UTAMA (Agar muncul terus di bawah) ---
 const menuBawah = {
     reply_markup: {
-        keyboard: [
-            [{ text: "📊 LAPORAN HARIAN" }, { text: "♻️ RESTART" }, { text: "🛡️ CEK STATUS WA" }]
-        ],
+        keyboard: [[{ text: "📊 LAPORAN HARIAN" }, { text: "♻️ RESTART" }, { text: "🛡️ CEK STATUS WA" }]],
         resize_keyboard: true,
         one_time_keyboard: false
     }
 };
 
 async function initWA(chatId, id) {
+    // 1. HARD RESET SESSION (Hapus paksa folder agar tidak muter)
     if (fs.existsSync(engines[id].session)) {
         try { fs.rmSync(engines[id].session, { recursive: true, force: true }); } catch (e) {}
     }
@@ -34,7 +32,10 @@ async function initWA(chatId, id) {
     const { state, saveCreds } = await useMultiFileAuthState(engines[id].session);
     const { version } = await fetchLatestBaileysVersion();
 
-    if (engines[id].sock) { engines[id].sock.terminate(); }
+    if (engines[id].sock) { 
+        try { engines[id].sock.logout(); } catch(e) {}
+        engines[id].sock.terminate(); 
+    }
 
     engines[id].sock = makeWASocket({
         version,
@@ -43,11 +44,20 @@ async function initWA(chatId, id) {
             keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' })),
         },
         logger: pino({ level: 'silent' }),
-        browser: ["Ninja Storm", "MacOS", "3.0.0"],
+        // PAKAI IDENTITAS BARU (Agar dianggap perangkat baru oleh WA)
+        browser: ["Ninja Storm", "Safari", "17.0"], 
         syncFullHistory: false,
         shouldSyncHistoryMessage: () => false,
-        connectTimeoutMs: 60000,
+        connectTimeoutMs: 120000, // Tambah waktu tunggu ke 2 menit
+        defaultQueryTimeoutMs: 0,
         receivedPendingNotifications: false,
+        // Fitur bypass agar tidak stuck saat login
+        options: {
+            connection: {
+                maxRetries: 10,
+                retryDelay: 3000
+            }
+        }
     });
 
     engines[id].sock.ev.on('creds.update', saveCreds);
@@ -56,11 +66,22 @@ async function initWA(chatId, id) {
         const { connection, qr, lastDisconnect } = update;
 
         if (qr) {
-            const buffer = await QRCode.toBuffer(qr, { scale: 6, margin: 3, errorCorrectionLevel: 'M' });
+            // QR dibuat sangat kontras (Hitam Putih Tajam)
+            const buffer = await QRCode.toBuffer(qr, { 
+                scale: 7, 
+                margin: 4, 
+                errorCorrectionLevel: 'H',
+                color: { dark: '#000000', light: '#ffffff' }
+            });
+            
             if (engines[id].lastQrMsgId) await bot.deleteMessage(chatId, engines[id].lastQrMsgId).catch(() => {});
             
             const sent = await bot.sendPhoto(chatId, buffer, { 
-                caption: `${engines[id].color} **SCAN QR ENGINE ${id}**\nSegera scan Bos agar tidak muter.`,
+                caption: `${engines[id].color} **SCAN QR ENGINE ${id}**\n\n` +
+                         `⚠️ **PENTING:**\n` +
+                         `1. Pastikan di HP sudah LOGOUT dari semua perangkat tertaut.\n` +
+                         `2. Gunakan koneksi internet stabil di HP.\n` +
+                         `3. Tunggu 2-3 detik setelah scan.`,
                 parse_mode: 'Markdown'
             });
             engines[id].lastQrMsgId = sent.message_id;
@@ -68,59 +89,42 @@ async function initWA(chatId, id) {
 
         if (connection === 'open') {
             if (engines[id].lastQrMsgId) await bot.deleteMessage(chatId, engines[id].lastQrMsgId).catch(() => {});
-            // Pastikan menuBawah dikirim di sini
-            bot.sendMessage(chatId, `✅ **ENGINE ${id} ONLINE!**\nSistem siap digunakan Bos.`, menuBawah);
+            bot.sendMessage(chatId, `✅ **ENGINE ${id} ONLINE!**\nSesi baru berhasil dibuat.`, menuBawah);
         }
 
         if (connection === 'close') {
             const code = lastDisconnect?.error?.output?.statusCode;
             if (code !== DisconnectReason.loggedOut) {
-                setTimeout(() => initWA(chatId, id), 7000);
+                setTimeout(() => initWA(chatId, id), 10000);
             }
         }
     });
 }
 
-// --- LOGIKA PESAN (RESTART, LAPORAN, CEK STATUS) ---
+// --- HANDLER TELEGRAM ---
 bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
-    const text = msg.text;
-
-    if (text === "📊 LAPORAN HARIAN") {
-        bot.sendMessage(chatId, `📊 **LAPORAN BLAST**\n\n- Hari Ini: ${stats.hariIni}\n- Total: ${stats.totalBlast}`, menuBawah);
+    if (msg.text === "📊 LAPORAN HARIAN") bot.sendMessage(chatId, `📊 Laporan: ${stats.hariIni}`, menuBawah);
+    if (msg.text === "♻️ RESTART") {
+        await bot.sendMessage(chatId, "♻️ Restarting...", menuBawah);
+        setTimeout(() => process.exit(0), 1000);
     }
-
-    if (text === "♻️ RESTART") {
-        await bot.sendMessage(chatId, "♻️ **PROSES RESTART...**\nBot akan mati sejenak, tunggu 5 detik lalu /login kembali.", menuBawah);
-        setTimeout(() => process.exit(0), 2000);
-    }
-
-    if (text === "🛡️ CEK STATUS WA") {
-        let status = "🛡️ **STATUS ENGINE**\n\n";
-        for (let i = 1; i <= 2; i++) {
-            status += `${engines[i].color} Engine ${i}: ${engines[i].sock?.user ? "✅ ONLINE" : "❌ OFFLINE"}\n`;
-        }
-        bot.sendMessage(chatId, status, menuBawah);
+    if (msg.text === "🛡️ CEK STATUS WA") {
+        let s = "🛡️ **STATUS**\n";
+        for (let i=1; i<=2; i++) s += `${engines[i].color} Engine ${i}: ${engines[i].sock?.user ? "✅ ON" : "❌ OFF"}\n`;
+        bot.sendMessage(chatId, s, menuBawah);
     }
 });
 
-// --- CALLBACK & LOGIN ---
 bot.on('callback_query', (q) => {
-    const chatId = q.message.chat.id;
-    if (q.data.startsWith('login_')) {
-        initWA(chatId, q.data.split('_')[1]);
-    }
+    if (q.data.startsWith('login_')) initWA(q.message.chat.id, q.data.split('_')[1]);
     bot.answerCallbackQuery(q.id);
 });
 
 bot.onText(/\/login/, (msg) => {
-    bot.sendMessage(msg.chat.id, "🌪️ **NINJA STORM LOGIN**\nPilih engine:", {
-        reply_markup: { 
-            inline_keyboard: [[{ text: "Engine 1", callback_data: 'login_1' }, { text: "Engine 2", callback_data: 'login_2' }]]
-        }
+    bot.sendMessage(msg.chat.id, "Pilih Engine:", {
+        reply_markup: { inline_keyboard: [[{ text: "Engine 1", callback_data: 'login_1' }, { text: "Engine 2", callback_data: 'login_2' }]] }
     });
 });
 
-bot.onText(/\/start/, (msg) => {
-    bot.sendMessage(msg.chat.id, "🌪️ **NINJA STORM READY**\nTombol menu sudah aktif di bawah.", menuBawah);
-});
+bot.onText(/\/start/, (msg) => bot.sendMessage(msg.chat.id, "🌪️ Ninja Storm Ready", menuBawah));
