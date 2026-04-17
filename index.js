@@ -12,8 +12,8 @@ process.on('uncaughtException', (err) => console.log('Caught exception: ', err))
 process.on('unhandledRejection', (reason, promise) => console.log('Unhandled Rejection at:', promise, 'reason:', reason));
 
 let engines = {
-    1: { sock: null, lastQrMsgId: null, isProcessing: false, session: './session_1', file: 'nomor1.txt', color: '🔵' },
-    2: { sock: null, lastQrMsgId: null, isProcessing: false, session: './session_2', file: 'nomor2.txt', color: '🟢' }
+    1: { sock: null, lastQrMsgId: null, isProcessing: false, session: './session_1', file: 'nomor1.txt', color: '🌪' },
+    2: { sock: null, lastQrMsgId: null, isProcessing: false, session: './session_2', file: 'nomor2.txt', color: '🌊' }
 };
 
 async function initWA(chatId, id) {
@@ -71,8 +71,8 @@ bot.onText(/\/login/, (msg) => {
     bot.sendMessage(msg.chat.id, "🚀 Silahkan Dipilih Barcode Dibawah Ini :", {
         reply_markup: {
             inline_keyboard: [[
-                { text: "(ON)🌪 QR 1", callback_data: 'login_1' },
-                { text: "(ON)🌊 QR 2", callback_data: 'login_2' }
+                { text: "(ON)🌪 QR1", callback_data: 'login_1' },
+                { text: "(ON)🌊 QR2", callback_data: 'login_2' }
             ]]
         }
     });
