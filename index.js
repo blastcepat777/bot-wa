@@ -5,51 +5,44 @@ const pino = require('pino');
 const fs = require('fs');
 const express = require('express');
 
-// --- DATABASE REKAPAN ---
-const DB_FILE = './database_ninja_final.json';
-if (!fs.existsSync(DB_FILE)) {
-    fs.writeFileSync(DB_FILE, JSON.stringify({ total: 0, harian: {} }));
-}
-
-function updateRekapan(jumlah) {
-    let data = JSON.parse(fs.readFileSync(DB_FILE));
-    let tgl = new Date().toLocaleDateString('id-ID');
-    data.total += jumlah;
-    if (!data.harian[tgl]) data.harian[tgl] = 0;
-    data.harian[tgl] += jumlah;
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
-    return { total: data.total, today: data.harian[tgl] };
-}
-
-// --- KEEP ALIVE RAILWAY ---
+// --- PERBAIKAN RAILWAY 24 JAM ---
 const app = express();
-app.get('/', (req, res) => res.send('NINJA STORM ACTIVE 🚀'));
-app.listen(process.env.PORT || 3000, '0.0.0.0');
+app.get('/', (req, res) => res.send('Engine Running'));
+app.listen(process.env.PORT || 3000);
 
 const TOKEN = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
 const bot = new TelegramBot(TOKEN, { polling: true });
 
+process.on('uncaughtException', (err) => console.log('Error: ', err.message));
+process.on('unhandledRejection', (reason) => console.log('Rejection: ', reason));
+
 let engines = {
-    1: { sock: null, session: './session_1', file: 'nomor1.txt', script: 'script1.txt', color: '🌪' },
-    2: { sock: null, session: './session_2', file: 'nomor2.txt', script: 'script2.txt', color: '🌊' }
+    1: { sock: null, lastQrMsgId: null, session: './session_1', file: 'nomor1.txt', script: 'script1.txt', color: '🌪', menuSent: false, isInitializing: false },
+    2: { sock: null, lastQrMsgId: null, session: './session_2', file: 'nomor2.txt', script: 'script2.txt', color: '🌊', menuSent: false, isInitializing: false }
 };
 
-// --- KEYBOARD MENU (UKURAN KECIL + TOMBOL CANCEL) ---
-const keyboardUtama = {
-    reply_markup: {
-        keyboard: [
-            [{ text: "🌪 LOGIN QR 1" }, { text: "🌊 LOGIN QR 2" }],
-            [{ text: "🔍 FILTER 1" }, { text: "🔍 FILTER 2" }],
-            [{ text: "🚀 BLAST 1" }, { text: "🚀 BLAST 2" }],
-            [{ text: "📊 LAPORAN REKAP" }, { text: "♻️ RESTART" }],
-            [{ text: "❌ CANCEL" }] // Tombol Cancel Ditambahkan
-        ],
-        resize_keyboard: true, // Pastikan tombol mengecil
-        one_time_keyboard: false
-    }
+const loginKeyboard = [[{ text: "🚀 LOGIN", callback_data: 'cmd_login' }]];
+
+const sendMenuUtama = (chatId) => {
+    bot.sendMessage(chatId, `🌪️ **NINJA STORM ENGINE**\n\n/login - Ambil Barcode\n/restart - Reset All`);
 };
 
-async function startEngine(chatId, id) {
+const sendMenuEngine = (chatId, id) => {
+    bot.sendMessage(chatId, `${engines[id].color} **ENGINE ${id} ONLINE**\n\nSilahkan Pilih Aksi:`, {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: `🔍 FILTER NOMOR ${id}`, callback_data: `filter_${id}` }],
+                [{ text: "♻️ RESTART", callback_data: 'restart_bot' }],
+                [{ text: "❌ KELUAR", callback_data: 'batal' }]
+            ]
+        }
+    });
+};
+
+async function initWA(chatId, id) {
+    if (engines[id].isInitializing) return;
+    engines[id].isInitializing = true;
+
     const { state, saveCreds } = await useMultiFileAuthState(engines[id].session);
     const { version } = await fetchLatestBaileysVersion();
 
@@ -57,82 +50,146 @@ async function startEngine(chatId, id) {
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
-        browser: ["Ninja Storm", "Chrome", "1.0.0"]
+        browser: ["Ninja Storm", "Chrome", "1.0.0"],
+        syncFullHistory: false, 
+        printQRInTerminal: false,
+        connectTimeoutMs: 60000 
     });
 
-    engines[id].sock.ev.on('creds.update', saveCreds);
-    engines[id].sock.ev.on('connection.update', async (u) => {
+    const sock = engines[id].sock;
+    sock.ev.on('creds.update', saveCreds);
+
+    sock.ev.on('connection.update', async (u) => {
         const { connection, qr, lastDisconnect } = u;
-        const waktu = new Date().toLocaleString('id-ID');
 
         if (qr && chatId) {
-            const buffer = await QRCode.toBuffer(qr, { scale: 4 });
-            await bot.sendPhoto(chatId, buffer, { caption: `⚡ **SCAN QR ENGINE ${id}**\n🕒 ${waktu}` });
+            try {
+                const buffer = await QRCode.toBuffer(qr, { scale: 4 }); 
+                const otherId = id == 1 ? 2 : 1;
+                const markup = {
+                    inline_keyboard: [
+                        [{ text: `(ON)${engines[otherId].color} QR${otherId}`, callback_data: `login_${otherId}` }],
+                        [{ text: "♻️ RESTART", callback_data: 'restart_bot' }],
+                        [{ text: "❌ CANCEL", callback_data: 'batal' }]
+                    ]
+                };
+
+                const caption = `${engines[id].color} **SCAN QR ENGINE ${id} SEKARANG !!**\n\n🕒 Update: ${new Date().toLocaleTimeString('id-ID')}`;
+                const sent = await bot.sendPhoto(chatId, buffer, { caption, parse_mode: 'Markdown', reply_markup: markup });
+                
+                if (engines[id].lastQrMsgId) {
+                    await bot.deleteMessage(chatId, engines[id].lastQrMsgId).catch(() => {});
+                }
+                engines[id].lastQrMsgId = sent.message_id;
+            } catch (e) { console.log("QR Error"); }
         }
 
         if (connection === 'open') {
-            bot.sendMessage(chatId || '8657782534', `✅ **ENGINE ${id} ONLINE!**`, keyboardUtama);
-        }
-
-        if (connection === 'close') {
-            const reason = lastDisconnect?.error?.output?.statusCode;
-            if (reason === DisconnectReason.loggedOut) {
-                bot.sendMessage(chatId || '8657782534', `🚫 **LAPORAN: WA ${id} KELUAR / BANNED**\n🕒 ${waktu}`);
-                fs.rmSync(engines[id].session, { recursive: true, force: true });
-            } else {
-                startEngine(chatId, id);
+            engines[id].isInitializing = false;
+            if (engines[id].lastQrMsgId && chatId) {
+                await bot.deleteMessage(chatId, engines[id].lastQrMsgId).catch(() => {});
+                engines[id].lastQrMsgId = null;
             }
+            if (!engines[id].menuSent && chatId) {
+                sendMenuEngine(chatId, id);
+                engines[id].menuSent = true;
+            }
+        }
+        
+        if (connection === 'close') {
+            engines[id].isInitializing = false;
+            engines[id].menuSent = false;
+            const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+            if (shouldReconnect) initWA(chatId, id);
         }
     });
 }
 
-bot.on('message', async (msg) => {
-    const chatId = msg.chat.id;
-    const text = msg.text;
+// AUTO-RECONNECT
+Object.keys(engines).forEach(id => {
+    if (fs.existsSync(engines[id].session)) {
+        initWA(null, id); 
+    }
+});
 
-    if (text === "/start" || text === "♻️ RESTART") {
-        return bot.sendMessage(chatId, "🌪️ **NINJA STORM ENGINE READY**", keyboardUtama);
+bot.on('callback_query', async (q) => {
+    const chatId = q.message.chat.id;
+    const msgId = q.message.message_id;
+    const data = q.data;
+
+    if (data === 'restart_bot') {
+        await bot.sendMessage(chatId, "♻️ **SUDAH BERHASIL DI RESTART...**", {
+            reply_markup: { inline_keyboard: loginKeyboard }
+        });
+        setTimeout(() => process.exit(), 1000);
+        return bot.answerCallbackQuery(q.id);
     }
 
-    if (text === "❌ CANCEL") {
-        return bot.sendMessage(chatId, "❌ **AKSI DIBATALKAN.**", keyboardUtama);
+    if (data === 'cmd_login') {
+        return bot.editMessageText("🚀 Pilih Engine:", {
+            chat_id: chatId, message_id: msgId,
+            reply_markup: {
+                inline_keyboard: [[{ text: "🌪 QR1", callback_data: 'login_1' }, { text: "🌊 QR2", callback_data: 'login_2' }]]
+            }
+        });
     }
 
-    if (text === "🌪 LOGIN QR 1") startEngine(chatId, 1);
-    if (text === "🌊 LOGIN QR 2") startEngine(chatId, 2);
+    if (data.startsWith('login_')) {
+        const id = data.split('_')[1];
+        if (engines[id].isInitializing) return bot.answerCallbackQuery(q.id, { text: "Sabar..." });
+        const prepMsg = await bot.sendMessage(chatId, `⏳ **Menyiapkan QR Engine ${id}...**`);
+        engines[id].lastQrMsgId = prepMsg.message_id;
+        initWA(chatId, id);
+    }
 
-    if (text === "🔍 FILTER 1" || text === "🔍 FILTER 2") {
-        const id = text.includes("1") ? 1 : 2;
-        if (!engines[id].sock) return bot.sendMessage(chatId, `❌ Login Engine ${id} dulu!`);
-        bot.sendMessage(chatId, `🔍 **FILTERING ENGINE ${id}...**`);
+    if (data.startsWith('filter_')) {
+        const id = data.split('_')[1];
+        if (!engines[id].sock) return bot.sendMessage(chatId, `❌ Engine ${id} Belum Login!`);
+        bot.sendMessage(chatId, `${engines[id].color} **FILTER ENGINE ${id} MULAI...**`);
         try {
             const lines = fs.readFileSync(engines[id].file, 'utf-8').split('\n').filter(l => l.trim().length > 5);
             let aktif = [];
-            for (const l of lines) {
-                const n = l.replace(/[^0-9]/g, '');
-                const [res] = await engines[id].sock.onWhatsApp(n).catch(() => [null]);
-                if (res?.exists) aktif.push(l.trim());
+            for (const line of lines) {
+                const num = line.replace(/[^0-9]/g, '');
+                const [res] = await engines[id].sock.onWhatsApp(num).catch(() => [null]);
+                if (res?.exists) aktif.push(line.trim());
             }
             fs.writeFileSync(`aktif_${id}.txt`, aktif.join('\n'));
-            bot.sendMessage(chatId, `✅ **FILTER ${id} SELESAI**\nTotal: ${aktif.length}`, keyboardUtama);
-        } catch (e) { bot.sendMessage(chatId, "❌ File nomor tidak ditemukan!"); }
+            
+            bot.sendMessage(chatId, `✅ **FILTER ${id} SELESAI**\nAktif: ${aktif.length}\n\nSilahkan Pilih:`, {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: `🚀 JALAN BLAST ${id}`, callback_data: `jalan_${id}` }],
+                        [{ text: "♻️ RESTART", callback_data: 'restart_bot' }],
+                        [{ text: "❌ KELUAR", callback_data: 'batal' }]
+                    ]
+                }
+            });
+        } catch (e) { bot.sendMessage(chatId, "File Error!"); }
     }
 
-    if (text === "🚀 BLAST 1" || text === "🚀 BLAST 2") {
-        const id = text.includes("1") ? 1 : 2;
+    // --- LOGIKA JALAN BLAST (FIRE & FORGET SPEED) ---
+    if (data.startsWith('jalan_')) {
+        const id = data.split('_')[1];
+        const engine = engines[id];
+        if (!engine.sock) return;
+
         try {
-            const nums = fs.readFileSync(`aktif_${id}.txt`, 'utf-8').split('\n').filter(l => l.trim().length > 5);
-            const script = fs.readFileSync(engines[id].script, 'utf-8');
-            bot.sendMessage(chatId, `🚀 **MELEDAKKAN ${nums.length} PESAN...**`);
-            await Promise.all(nums.map(n => engines[id].sock.sendMessage(n.replace(/[^0-9]/g, '') + "@s.whatsapp.net", { text: script }).catch(() => {})));
-            const stats = updateRekapan(nums.length);
-            bot.sendMessage(chatId, `✅ **BLAST ${id} SELESAI!**\n📊 Hari Ini: ${stats.today}\n🌍 Total: ${stats.total}`, keyboardUtama);
-        } catch (e) { bot.sendMessage(chatId, "❌ Filter dulu!"); }
-    }
+            const numbers = fs.readFileSync(`aktif_${id}.txt`, 'utf-8').split('\n').filter(l => l.trim().length > 5);
+            const script = fs.readFileSync(engine.script, 'utf-8');
+            
+            bot.sendMessage(chatId, `🚀 **MELEDAKKAN ${numbers.length} PESAN SEKALIGUS...**`);
 
-    if (text === "📊 LAPORAN REKAP") {
-        const d = JSON.parse(fs.readFileSync(DB_FILE));
-        const tgl = new Date().toLocaleDateString('id-ID');
-        bot.sendMessage(chatId, `📊 **REKAP BLAST**\n📅 Tgl: ${tgl}\n🚀 Hari Ini: ${d.harian[tgl] || 0}\n🌍 Total: ${d.total}`, keyboardUtama);
+            // Kecepatan Penuh: Semua nomor ditembak paralel tanpa antre satu-satu
+            await Promise.all(numbers.map(line => {
+                const jid = line.replace(/[^0-9]/g, '') + "@s.whatsapp.net";
+                return engine.sock.sendMessage(jid, { text: script }).catch(() => {});
+            }));
+
+            bot.sendMessage(chatId, `✅ **BLAST ENGINE ${id} SELESAI MELEDAK!**`);
+        } catch (e) { bot.sendMessage(chatId, "Gagal meledak!"); }
     }
+    bot.answerCallbackQuery(q.id);
 });
+
+bot.onText(/\/start/, (msg) => sendMenuUtama(msg.chat.id));
