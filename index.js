@@ -71,8 +71,8 @@ bot.onText(/\/login/, (msg) => {
     bot.sendMessage(msg.chat.id, "🚀 Silahkan Dipilih Barcode Dibawah Ini :", {
         reply_markup: {
             inline_keyboard: [[
-                { text: "(ON)🌪 BARCODE WA 1", callback_data: 'login_1' },
-                { text: "(ON)🌊 BARCODE WA 2", callback_data: 'login_2' }
+                { text: "(ON)🌪 QR 1", callback_data: 'login_1' },
+                { text: "(ON)🌊 QR 2", callback_data: 'login_2' }
             ]]
         }
     });
