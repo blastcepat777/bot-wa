@@ -37,7 +37,6 @@ const sendMenuEngine = (chatId, id) => {
         reply_markup: {
             inline_keyboard: [
                 [{ text: `🔍 FILTER NOMOR ${id}`, callback_data: `filter_${id}` }],
-                [{ text: `🚀 JALAN BLAST ${id}`, callback_data: `jalan_${id}` }],
                 [{ text: "❌ KELUAR", callback_data: 'batal' }]
             ]
         }
@@ -174,7 +173,15 @@ bot.on('callback_query', async (q) => {
                 if (res?.exists) aktif.push(line.trim());
             }
             fs.writeFileSync(`aktif_${id}.txt`, aktif.join('\n'));
-            bot.sendMessage(chatId, `✅ **FILTER ${id} SELESAI**\nAktif: ${aktif.length}`);
+            
+            // TOMBOL JALAN BLAST DIPINDAHKAN KE SINI (SETELAH FILTER SELESAI)
+            bot.sendMessage(chatId, `✅ **FILTER ${id} SELESAI**\nAktif: ${aktif.length}`, {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: `🚀 JALAN BLAST ${id}`, callback_data: `jalan_${id}` }]
+                    ]
+                }
+            });
         } catch (e) { bot.sendMessage(chatId, `❌ File ${engines[id].file} tidak ditemukan.`); }
     }
 
