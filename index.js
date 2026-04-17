@@ -78,10 +78,15 @@ async function initWA(chatId, id) {
         }
         if (connection === 'open') {
             await safeDelete(chatId, engines[id].lastQrMsgId);
-            bot.sendMessage(chatId, `${engines[id].color} **ENGINE ${id} ONLINE** ✅`, {
+            
+            // --- FIX: TAMPILKAN TOMBOL FILTER 1 & FILTER 2 SEJAJAR ---
+            bot.sendMessage(chatId, `${engines[id].color} **ENGINE ${id} ONLINE** ✅\nSilahkan pilih filter:`, {
                 reply_markup: {
                     inline_keyboard: [
-                        [{ text: `🔍 FILTER NOMOR ${id}`, callback_data: `filter_${id}` }],
+                        [
+                            { text: `🔍 FILTER 1`, callback_data: `filter_1` },
+                            { text: `🔍 FILTER 2`, callback_data: `filter_2` }
+                        ],
                         [{ text: "❌ CANCEL", callback_data: 'batal' }]
                     ]
                 }
@@ -128,12 +133,11 @@ bot.on('callback_query', async (q) => {
         initWA(chatId, data.split('_')[1]);
     }
 
-    // --- LOGIKA FILTER NOMOR ---
     if (data.startsWith('filter_')) {
         const id = data.split('_')[1];
-        if (!engines[id].sock) return bot.sendMessage(chatId, `❌ Engine ${id} belum login!`);
+        if (!engines[id].sock) return bot.sendMessage(chatId, `❌ Engine ${id} belum login! Silahkan login dulu.`);
         
-        bot.sendMessage(chatId, `${engines[id].color} **FILTER ENGINE ${id} BERJALAN...**`);
+        bot.sendMessage(chatId, `${engines[id].color} **FILTER ENGINE ${id} SEDANG JALAN...**`);
         try {
             const lines = fs.readFileSync(engines[id].file, 'utf-8').split('\n').filter(l => l.trim().length > 5);
             let aktif = [];
@@ -144,7 +148,7 @@ bot.on('callback_query', async (q) => {
             }
             fs.writeFileSync(`aktif_${id}.txt`, aktif.join('\n'));
             
-            bot.sendMessage(chatId, `✅ **FILTER ${id} SELESAI**\nAktif: ${aktif.length}\n\nLanjut Blast?`, {
+            bot.sendMessage(chatId, `✅ **FILTER ${id} SELESAI**\nAktif: ${aktif.length}`, {
                 reply_markup: {
                     inline_keyboard: [
                         [{ text: `🚀 JALAN BLAST ${id}`, callback_data: `jalan_${id}` }],
@@ -152,16 +156,15 @@ bot.on('callback_query', async (q) => {
                     ]
                 }
             });
-        } catch (e) { bot.sendMessage(chatId, `❌ File ${engines[id].file} tidak ditemukan.`); }
+        } catch (e) { bot.sendMessage(chatId, `❌ Gagal: File ${engines[id].file} tidak ada.`); }
     }
 
-    // --- LOGIKA JALAN BLAST ---
     if (data.startsWith('jalan_')) {
         const id = data.split('_')[1];
         try {
             const numbers = fs.readFileSync(`aktif_${id}.txt`, 'utf-8').split('\n').filter(l => l.trim().length > 5);
             const pesanBlast = fs.readFileSync(engines[id].script, 'utf-8'); 
-            bot.sendMessage(chatId, `🚀 **BLAST ENGINE ${id} MULAI...**`);
+            bot.sendMessage(chatId, `🚀 **ENGINE ${id} MULAI BLAST...**`);
             
             for (let line of numbers) {
                 const num = line.replace(/[^0-9]/g, '') + "@s.whatsapp.net";
@@ -169,10 +172,10 @@ bot.on('callback_query', async (q) => {
                 stats.totalBlast++;
                 stats.hariIni++;
             }
-            bot.sendMessage(chatId, `✅ **ENGINE ${id} SELESAI BLAST!**`, {
+            bot.sendMessage(chatId, `✅ **ENGINE ${id} SELESAI!**`, {
                 reply_markup: { inline_keyboard: [[{ text: "❌ CANCEL", callback_data: 'batal' }]] }
             });
-        } catch (e) { bot.sendMessage(chatId, "❌ Gagal Blast. Periksa file aktif."); }
+        } catch (e) { bot.sendMessage(chatId, "❌ Gagal. Cek file aktif."); }
     }
 
     if (data === 'batal') {
