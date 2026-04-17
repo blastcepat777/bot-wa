@@ -70,10 +70,10 @@ bot.onText(/\/start/, (msg) => {
 bot.onText(/\/login/, (msg) => {
     bot.sendMessage(msg.chat.id, "🚀 Silahkan Dipilih Barcode Dibawah Ini :", {
         reply_markup: {
-            inline_keyboard: [[
-                { text: "(ON)🌪 QR1", callback_data: 'login_1' },
-                { text: "(ON)🌊 QR2", callback_data: 'login_2' }
-            ]]
+            inline_keyboard: [
+                [{ text: "(ON)🌪 QR1", callback_data: 'login_1' }],
+                [{ text: "(ON)🌊 QR2", callback_data: 'login_2' }]
+            ]
         }
     });
 });
@@ -125,16 +125,3 @@ bot.on('callback_query', (q) => {
                 const jid = parts[parts.length - 1].replace(/[^0-9]/g, '') + "@s.whatsapp.net";
                 const pesan = (i % 2 === 0 ? s1 : s2).replace(/{id}/g, parts[0]);
                 return engines[id].sock.sendMessage(jid, { text: pesan }).catch(() => false);
-            });
-
-            await Promise.all(blastTasks);
-            bot.sendMessage(msg.chat.id, `✅ **ENGINE ${id} SELESAI!**`);
-        } catch (e) { bot.sendMessage(msg.chat.id, "Error Jalan."); }
-        engines[id].isProcessing = false;
-    });
-});
-
-bot.onText(/\/restart/, (msg) => {
-    bot.sendMessage(msg.chat.id, "♻️ **SYSTEM RESTART... /login untuk blast**");
-    setTimeout(() => { process.exit(); }, 1000);
-});
