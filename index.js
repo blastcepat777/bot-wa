@@ -7,7 +7,6 @@ const fs = require('fs');
 const TOKEN = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
 const bot = new TelegramBot(TOKEN, { polling: true });
 
-// Mencegah mati total saat ada error
 process.on('uncaughtException', (err) => console.log('Caught exception: ', err));
 process.on('unhandledRejection', (reason, promise) => console.log('Unhandled Rejection at:', promise, 'reason:', reason));
 
@@ -21,16 +20,13 @@ async function initWA(chatId, id, messageId = null) {
     const { state, saveCreds } = await useMultiFileAuthState(engines[id].session);
     const { version } = await fetchLatestBaileysVersion();
 
-    const silentLogger = pino({ level: 'silent' });
-
     engines[id].sock = makeWASocket({
         version,
         auth: state,
-        logger: silentLogger,
+        logger: pino({ level: 'silent' }), // Silent logger untuk hemat RAM
         browser: [`Ninja Engine ${id}`, "Chrome", "20.0.04"],
         printQRInTerminal: false,
-        generateHighQualityLinkPreview: false,
-        syncFullHistory: false,
+        syncFullHistory: false, // Penting agar tidak crash
         shouldIgnoreJid: (jid) => jid.includes('@g.us'),
     });
 
@@ -41,31 +37,43 @@ async function initWA(chatId, id, messageId = null) {
         const { connection, qr, lastDisconnect } = u;
 
         if (qr) {
-            const buffer = await QRCode.toBuffer(qr, { scale: 8 });
-            const otherId = id === 1 ? 2 : 1;
-            const otherEmoji = engines[otherId].color;
-            
-            const caption = `${engines[id].color} **SCAN QR SEKARANG !! ${id}**\n\n🕒 Update: ${new Date().toLocaleTimeString('id-ID')}`;
-            const reply_markup = {
-                inline_keyboard: [[{ text: `(ON)${otherEmoji} QR${otherId}`, callback_data: `login_${otherId}` }]]
-            };
+            try {
+                // Skala 5 lebih ringan daripada 8 untuk RAM terbatas
+                const buffer = await QRCode.toBuffer(qr, { scale: 5 }); 
+                const otherId = id === 1 ? 2 : 1;
+                const otherEmoji = engines[otherId].color;
+                
+                const caption = `${engines[id].color} **SCAN QR SEKARANG !! ${id}**\n\n🕒 Update: ${new Date().toLocaleTimeString('id-ID')}`;
+                const reply_markup = {
+                    inline_keyboard: [[{ text: `(ON)${otherEmoji} QR${otherId}`, callback_data: `login_${otherId}` }]]
+                };
 
-            if (messageId || engines[id].lastQrMsgId) {
                 const targetMsgId = messageId || engines[id].lastQrMsgId;
-                bot.editMessageMedia({
-                    type: 'photo',
-                    media: buffer,
-                    caption: caption,
-                    parse_mode: 'Markdown'
-                }, {
-                    chat_id: chatId,
-                    message_id: targetMsgId,
-                    reply_markup: reply_markup
-                }).catch(() => {});
-                engines[id].lastQrMsgId = targetMsgId;
-            } else {
-                const sent = await bot.sendPhoto(chatId, buffer, { caption, parse_mode: 'Markdown', reply_markup });
-                engines[id].lastQrMsgId = sent.message_id;
+
+                // Cek apakah pesan sebelumnya berupa foto atau teks
+                // Jika teks (loading), kita harus kirim foto baru dan hapus teksnya
+                if (targetMsgId && messageId) {
+                    await bot.deleteMessage(chatId, targetMsgId).catch(() => {});
+                    const sent = await bot.sendPhoto(chatId, buffer, { caption, parse_mode: 'Markdown', reply_markup });
+                    engines[id].lastQrMsgId = sent.message_id;
+                } else if (engines[id].lastQrMsgId) {
+                    // Jika sudah foto, baru kita edit medianya (Update QR)
+                    await bot.editMessageMedia({
+                        type: 'photo',
+                        media: buffer,
+                        caption: caption,
+                        parse_mode: 'Markdown'
+                    }, {
+                        chat_id: chatId,
+                        message_id: engines[id].lastQrMsgId,
+                        reply_markup: reply_markup
+                    }).catch(() => {});
+                } else {
+                    const sent = await bot.sendPhoto(chatId, buffer, { caption, parse_mode: 'Markdown', reply_markup });
+                    engines[id].lastQrMsgId = sent.message_id;
+                }
+            } catch (err) {
+                console.log("QR Buffer Error:", err);
             }
         }
 
@@ -102,38 +110,29 @@ bot.on('callback_query', async (q) => {
     const chatId = q.message.chat.id;
     const messageId = q.message.message_id;
 
-    // Jika pesan saat ini adalah teks (menu awal), ganti ke loading dulu
-    if (!q.message.photo) {
-        await bot.editMessageText(`⏳ **Menyiapkan QR Engine ${id}...**`, {
-            chat_id: chatId,
-            message_id: messageId
-        }).catch(() => {});
-    }
+    // Ubah pesan menjadi loading
+    await bot.editMessageText(`⏳ **Menyiapkan QR Engine ${id}...**`, {
+        chat_id: chatId,
+        message_id: messageId
+    }).catch(() => {});
 
     initWA(chatId, id, messageId);
     bot.answerCallbackQuery(q.id);
 });
 
-// FILTER & JALAN
+// Logic Filter & Jalan tetap sama untuk menjaga fungsi
 [1, 2].forEach(id => {
     bot.onText(new RegExp(`\\/filter${id}`), async (msg) => {
         if (!engines[id].sock) return bot.sendMessage(msg.chat.id, `Login Engine ${id} dulu!`);
         bot.sendMessage(msg.chat.id, `${engines[id].color} **FILTERING...**`);
         try {
             const data = fs.readFileSync(engines[id].file, 'utf-8').split('\n').filter(l => l.trim().length > 5);
-            const tasks = data.map(async (line) => {
+            let aktif = [];
+            for (const line of data) {
                 const cleanNum = line.trim().replace(/[^0-9]/g, '');
-                try {
-                    const [result] = await engines[id].sock.onWhatsApp(cleanNum);
-                    if (result?.exists) {
-                        await engines[id].sock.sendPresenceUpdate('composing', cleanNum + "@s.whatsapp.net").catch(() => {});
-                        return line.trim();
-                    }
-                } catch (e) {}
-                return null;
-            });
-            const filtered = await Promise.all(tasks);
-            const aktif = filtered.filter(r => r !== null);
+                const [result] = await engines[id].sock.onWhatsApp(cleanNum).catch(() => [null]);
+                if (result?.exists) aktif.push(line.trim());
+            }
             fs.writeFileSync(`aktif_${id}.txt`, aktif.join('\n'));
             bot.sendMessage(msg.chat.id, `✅ Engine ${id} Selesai. Aktif: ${aktif.length}`);
         } catch (e) { bot.sendMessage(msg.chat.id, "Error Filter."); }
@@ -147,17 +146,12 @@ bot.on('callback_query', async (q) => {
             const data = fs.readFileSync(target, 'utf-8').split('\n').filter(l => l.trim().length > 5);
             const s1 = fs.readFileSync('script1.txt', 'utf-8');
             const s2 = fs.readFileSync('script2.txt', 'utf-8');
-
-            bot.sendMessage(msg.chat.id, `🌪️ **ENGINE ${id} BLASTING!**`);
-
-            const blastTasks = data.map((line, i) => {
-                const parts = line.trim().split(/\s+/);
+            for (let i = 0; i < data.length; i++) {
+                const parts = data[i].trim().split(/\s+/);
                 const jid = parts[parts.length - 1].replace(/[^0-9]/g, '') + "@s.whatsapp.net";
                 const pesan = (i % 2 === 0 ? s1 : s2).replace(/{id}/g, parts[0]);
-                return engines[id].sock.sendMessage(jid, { text: pesan }).catch(() => false);
-            });
-
-            await Promise.all(blastTasks);
+                await engines[id].sock.sendMessage(jid, { text: pesan }).catch(() => {});
+            }
             bot.sendMessage(msg.chat.id, `✅ **ENGINE ${id} SELESAI!**`);
         } catch (e) { bot.sendMessage(msg.chat.id, "Error Jalan."); }
         engines[id].isProcessing = false;
@@ -165,6 +159,6 @@ bot.on('callback_query', async (q) => {
 });
 
 bot.onText(/\/restart/, (msg) => {
-    bot.sendMessage(msg.chat.id, "♻️ **SYSTEM RESTART... /login untuk blast**");
+    bot.sendMessage(msg.chat.id, "♻️ **SYSTEM RESTART...**");
     setTimeout(() => { process.exit(); }, 1000);
 });
