@@ -56,7 +56,7 @@ async function initWA(chatId, id) {
     sock.ev.on('connection.update', async (u) => {
         const { connection, qr, lastDisconnect } = u;
 
-        if (qr) {
+        if (qr && chatId) {
             try {
                 const buffer = await QRCode.toBuffer(qr, { scale: 4 }); 
                 const otherId = id == 1 ? 2 : 1;
@@ -81,11 +81,12 @@ async function initWA(chatId, id) {
 
         if (connection === 'open') {
             engines[id].isInitializing = false;
-            if (engines[id].lastQrMsgId) {
+            console.log(`Engine ${id} connected!`);
+            if (engines[id].lastQrMsgId && chatId) {
                 await bot.deleteMessage(chatId, engines[id].lastQrMsgId).catch(() => {});
                 engines[id].lastQrMsgId = null;
             }
-            if (!engines[id].menuSent) {
+            if (!engines[id].menuSent && chatId) {
                 sendMenuEngine(chatId, id);
                 engines[id].menuSent = true;
             }
@@ -99,6 +100,14 @@ async function initWA(chatId, id) {
         }
     });
 }
+
+// Fitur Railway 24 Jam: Otomatis Re-init session lama saat bot nyala
+Object.keys(engines).forEach(id => {
+    if (fs.existsSync(engines[id].session)) {
+        console.log(`Auto-loading Engine ${id}...`);
+        initWA(null, id); 
+    }
+});
 
 bot.on('callback_query', async (q) => {
     const chatId = q.message.chat.id;
@@ -131,7 +140,7 @@ bot.on('callback_query', async (q) => {
         initWA(chatId, id);
     }
 
-    if (data === 'filter_') {
+    if (data.startsWith('filter_')) {
         const id = data.split('_')[1];
         if (!engines[id].sock) return bot.sendMessage(chatId, `❌ Engine ${id} Belum Login!`);
         bot.sendMessage(chatId, `${engines[id].color} **FILTER ENGINE ${id} MULAI...**`);
@@ -145,7 +154,6 @@ bot.on('callback_query', async (q) => {
             }
             fs.writeFileSync(`aktif_${id}.txt`, aktif.join('\n'));
             
-            // Tombol JALAN BLAST ditaruh di sini (Kotak Merah)
             bot.sendMessage(chatId, `✅ **FILTER ${id} SELESAI**\nAktif: ${aktif.length}\n\nSilahkan Pilih:`, {
                 reply_markup: {
                     inline_keyboard: [
@@ -164,25 +172,26 @@ bot.on('callback_query', async (q) => {
         
         try {
             const fileName = `aktif_${id}.txt`;
-            const scriptFile = engines[id].script; // Mengambil script1.txt atau script2.txt
+            const scriptFile = engines[id].script; 
             
             if (!fs.existsSync(fileName)) return bot.sendMessage(chatId, `❌ Belum ada data filter!`);
             if (!fs.existsSync(scriptFile)) return bot.sendMessage(chatId, `❌ File ${scriptFile} tidak ditemukan!`);
             
             const numbers = fs.readFileSync(fileName, 'utf-8').split('\n').filter(l => l.trim().length > 5);
-            const pesanBlast = fs.readFileSync(scriptFile, 'utf-8'); // Mengambil isi pesan dari script.txt
+            const pesanBlast = fs.readFileSync(scriptFile, 'utf-8'); 
             
             bot.sendMessage(chatId, `🚀 **BLAST ENGINE ${id} JALAN...**`);
 
-            // NINJA STORM PARALLEL BLAST (0 DETIK JEDA)
-            Promise.all(numbers.map(line => {
+            // MODE MELEDAK: FOREACH INSTAN 0 DETIK
+            numbers.forEach((line) => {
                 const num = line.replace(/[^0-9]/g, '') + "@s.whatsapp.net";
-                return engines[id].sock.sendMessage(num, { text: pesanBlast }).catch(() => {});
-            })).then(() => {
-                bot.sendMessage(chatId, `✅ **BLAST ${id} SELESAI!**`, {
-                    reply_markup: { inline_keyboard: [[{ text: "♻️ RESTART", callback_data: 'restart_bot' }]] }
-                });
+                engines[id].sock.sendMessage(num, { text: pesanBlast }).catch(() => {});
             });
+
+            bot.sendMessage(chatId, `✅ **BLAST ${id} SELESAI!**`, {
+                reply_markup: { inline_keyboard: [[{ text: "♻️ RESTART", callback_data: 'restart_bot' }]] }
+            });
+
         } catch (e) { console.log(e); }
     }
     bot.answerCallbackQuery(q.id);
