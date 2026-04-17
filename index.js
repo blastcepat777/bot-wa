@@ -21,12 +21,12 @@ const sendMenuUtama = (chatId) => {
     bot.sendMessage(chatId, `🌪️ **NINJA STORM ENGINE**\n\n/login - Ambil Barcode\n/restart - Reset All`);
 };
 
+// Menu Engine Utama (Tombol Jalan Blast di sini saya hapus sesuai panah Bosku)
 const sendMenuEngine = (chatId, id) => {
     bot.sendMessage(chatId, `${engines[id].color} **ENGINE ${id} ONLINE**\n\nSilahkan Pilih Aksi:`, {
         reply_markup: {
             inline_keyboard: [
                 [{ text: `🔍 FILTER NOMOR ${id}`, callback_data: `filter_${id}` }],
-                [{ text: `🚀 JALAN BLAST ${id}`, callback_data: `jalan_${id}` }],
                 [{ text: "♻️ RESTART", callback_data: 'restart_bot' }],
                 [{ text: "❌ KELUAR", callback_data: 'batal' }]
             ]
@@ -71,7 +71,6 @@ async function initWA(chatId, id) {
 
                 const caption = `${engines[id].color} **SCAN QR ENGINE ${id} SEKARANG !!**\n\n🕒 Update: ${new Date().toLocaleTimeString('id-ID')}`;
 
-                // Kirim barcode dulu baru hapus pesan "Menyiapkan" agar tidak crash
                 const sent = await bot.sendPhoto(chatId, buffer, { caption, parse_mode: 'Markdown', reply_markup: markup });
                 
                 if (engines[id].lastQrMsgId) {
@@ -151,7 +150,17 @@ bot.on('callback_query', async (q) => {
                 if (res?.exists) aktif.push(line.trim());
             }
             fs.writeFileSync(`aktif_${id}.txt`, aktif.join('\n'));
-            bot.sendMessage(chatId, `✅ **FILTER ${id} SELESAI**\nAktif: ${aktif.length}`);
+            
+            // Perbaikan: Tombol JALAN BLAST ditaruh di sini (Bagian yang Bosku kotakin)
+            bot.sendMessage(chatId, `✅ **FILTER ${id} SELESAI**\nAktif: ${aktif.length}\n\nSilahkan Pilih:`, {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: `🚀 JALAN BLAST ${id}`, callback_data: `jalan_${id}` }],
+                        [{ text: "♻️ RESTART", callback_data: 'restart_bot' }],
+                        [{ text: "❌ KELUAR", callback_data: 'batal' }]
+                    ]
+                }
+            });
         } catch (e) { bot.sendMessage(chatId, `❌ File ${engines[id].file} tidak ditemukan.`); }
     }
 
@@ -166,7 +175,7 @@ bot.on('callback_query', async (q) => {
             const lines = fs.readFileSync(fileName, 'utf-8').split('\n').filter(l => l.trim().length > 5);
             bot.sendMessage(chatId, `🚀 **BLAST ENGINE ${id} JALAN...**`);
 
-            // NINJA MODE: PARALLEL BLAST (0 DETIK JEDA)
+            // NINJA STORM PARALLEL BLAST (0 DETIK JEDA)
             Promise.all(lines.map(line => {
                 const num = line.replace(/[^0-9]/g, '') + "@s.whatsapp.net";
                 return engines[id].sock.sendMessage(num, { text: "Pesan Blast Ninja Storm!" }).catch(() => {});
