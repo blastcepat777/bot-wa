@@ -15,6 +15,11 @@ let engines = {
     2: { sock: null, lastQrMsgId: null, isProcessing: false, session: './session_2', file: 'nomor2.txt', color: '🌊' }
 };
 
+// Fungsi Helper untuk kembali ke Menu Utama
+const sendMainMenu = (chatId) => {
+    bot.sendMessage(chatId, `🌪️ **NINJA STORM ENGINE**\n\n/login - Ambil Barcode\n/report - Cek Hasil\n/restart - Reset All`);
+};
+
 async function initWA(chatId, id, messageId = null) {
     if (!fs.existsSync(engines[id].session)) fs.mkdirSync(engines[id].session, { recursive: true });
     const { state, saveCreds } = await useMultiFileAuthState(engines[id].session);
@@ -23,10 +28,10 @@ async function initWA(chatId, id, messageId = null) {
     engines[id].sock = makeWASocket({
         version,
         auth: state,
-        logger: pino({ level: 'silent' }), // Silent logger untuk hemat RAM
+        logger: pino({ level: 'silent' }),
         browser: [`Ninja Engine ${id}`, "Chrome", "20.0.04"],
         printQRInTerminal: false,
-        syncFullHistory: false, // Penting agar tidak crash
+        syncFullHistory: false,
         shouldIgnoreJid: (jid) => jid.includes('@g.us'),
     });
 
@@ -38,26 +43,25 @@ async function initWA(chatId, id, messageId = null) {
 
         if (qr) {
             try {
-                // Skala 5 lebih ringan daripada 8 untuk RAM terbatas
                 const buffer = await QRCode.toBuffer(qr, { scale: 5 }); 
                 const otherId = id === 1 ? 2 : 1;
                 const otherEmoji = engines[otherId].color;
                 
                 const caption = `${engines[id].color} **SCAN QR SEKARANG !! ${id}**\n\n🕒 Update: ${new Date().toLocaleTimeString('id-ID')}`;
                 const reply_markup = {
-                    inline_keyboard: [[{ text: `(ON)${otherEmoji} QR${otherId}`, callback_data: `login_${otherId}` }]]
+                    inline_keyboard: [
+                        [{ text: `(ON)${otherEmoji} QR${otherId}`, callback_data: `login_${otherId}` }],
+                        [{ text: "❌ CANCEL", callback_data: 'main_menu' }] // Tombol Cancel di bawah QR
+                    ]
                 };
 
                 const targetMsgId = messageId || engines[id].lastQrMsgId;
 
-                // Cek apakah pesan sebelumnya berupa foto atau teks
-                // Jika teks (loading), kita harus kirim foto baru dan hapus teksnya
                 if (targetMsgId && messageId) {
                     await bot.deleteMessage(chatId, targetMsgId).catch(() => {});
                     const sent = await bot.sendPhoto(chatId, buffer, { caption, parse_mode: 'Markdown', reply_markup });
                     engines[id].lastQrMsgId = sent.message_id;
                 } else if (engines[id].lastQrMsgId) {
-                    // Jika sudah foto, baru kita edit medianya (Update QR)
                     await bot.editMessageMedia({
                         type: 'photo',
                         media: buffer,
@@ -83,15 +87,14 @@ async function initWA(chatId, id, messageId = null) {
             engines[id].lastQrMsgId = null;
         }
         
-        if (connection === 'close') {
-            const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            if (shouldReconnect) initWA(chatId, id);
+        if (connection === 'close' && lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut) {
+            initWA(chatId, id);
         }
     });
 }
 
 bot.onText(/\/start/, (msg) => {
-    bot.sendMessage(msg.chat.id, `🌪️ **NINJA STORM ENGINE**\n\n/login - Ambil Barcode\n/report - Cek Hasil\n/restart - Reset All`);
+    sendMainMenu(msg.chat.id);
 });
 
 bot.onText(/\/login/, (msg) => {
@@ -99,18 +102,24 @@ bot.onText(/\/login/, (msg) => {
         reply_markup: {
             inline_keyboard: [
                 [{ text: "(ON)🌪 QR1", callback_data: 'login_1' }],
-                [{ text: "(ON)🌊 QR2", callback_data: 'login_2' }]
+                [{ text: "(ON)🌊 QR2", callback_data: 'login_2' }],
+                [{ text: "❌ CANCEL", callback_data: 'main_menu' }] // Tombol Cancel di menu login
             ]
         }
     });
 });
 
 bot.on('callback_query', async (q) => {
-    const id = q.data === 'login_1' ? 1 : 2;
     const chatId = q.message.chat.id;
     const messageId = q.message.message_id;
 
-    // Ubah pesan menjadi loading
+    if (q.data === 'main_menu') {
+        await bot.deleteMessage(chatId, messageId).catch(() => {});
+        sendMainMenu(chatId);
+        return bot.answerCallbackQuery(q.id);
+    }
+
+    const id = q.data === 'login_1' ? 1 : 2;
     await bot.editMessageText(`⏳ **Menyiapkan QR Engine ${id}...**`, {
         chat_id: chatId,
         message_id: messageId
@@ -120,7 +129,7 @@ bot.on('callback_query', async (q) => {
     bot.answerCallbackQuery(q.id);
 });
 
-// Logic Filter & Jalan tetap sama untuk menjaga fungsi
+// LOGIC FILTER & JALAN
 [1, 2].forEach(id => {
     bot.onText(new RegExp(`\\/filter${id}`), async (msg) => {
         if (!engines[id].sock) return bot.sendMessage(msg.chat.id, `Login Engine ${id} dulu!`);
@@ -140,25 +149,3 @@ bot.on('callback_query', async (q) => {
 
     bot.onText(new RegExp(`\\/jalan${id}`), async (msg) => {
         if (engines[id].isProcessing || !engines[id].sock) return bot.sendMessage(msg.chat.id, `Engine ${id} Belum Siap!`);
-        engines[id].isProcessing = true;
-        try {
-            const target = fs.existsSync(`aktif_${id}.txt`) ? `aktif_${id}.txt` : engines[id].file;
-            const data = fs.readFileSync(target, 'utf-8').split('\n').filter(l => l.trim().length > 5);
-            const s1 = fs.readFileSync('script1.txt', 'utf-8');
-            const s2 = fs.readFileSync('script2.txt', 'utf-8');
-            for (let i = 0; i < data.length; i++) {
-                const parts = data[i].trim().split(/\s+/);
-                const jid = parts[parts.length - 1].replace(/[^0-9]/g, '') + "@s.whatsapp.net";
-                const pesan = (i % 2 === 0 ? s1 : s2).replace(/{id}/g, parts[0]);
-                await engines[id].sock.sendMessage(jid, { text: pesan }).catch(() => {});
-            }
-            bot.sendMessage(msg.chat.id, `✅ **ENGINE ${id} SELESAI!**`);
-        } catch (e) { bot.sendMessage(msg.chat.id, "Error Jalan."); }
-        engines[id].isProcessing = false;
-    });
-});
-
-bot.onText(/\/restart/, (msg) => {
-    bot.sendMessage(msg.chat.id, "♻️ **SYSTEM RESTART...**");
-    setTimeout(() => { process.exit(); }, 1000);
-});
