@@ -17,16 +17,10 @@ let engines = {
     2: { sock: null, lastQrMsgId: null, session: './session_2', file: 'nomor2.txt', script: 'script2.txt', color: '🌊' }
 };
 
-// --- MENU KEYBOARD 3 TOMBOL SEJAJAR KESAMPING ---
+// --- KEYBOARD SEJAJAR (FIX) ---
 const menuBawah = {
     reply_markup: {
-        keyboard: [
-            [
-                { text: "📊 LAPORAN HARIAN" }, 
-                { text: "♻️ RESTART" }, 
-                { text: "🛡️ CEK STATUS WA" }
-            ] 
-        ],
+        keyboard: [[{ text: "📊 LAPORAN HARIAN" }, { text: "♻️ RESTART" }, { text: "🛡️ CEK STATUS WA" }]],
         resize_keyboard: true,
         one_time_keyboard: false
     }
@@ -49,25 +43,44 @@ async function initWA(chatId, id) {
 
     engines[id].sock.ev.on('creds.update', saveCreds);
     engines[id].sock.ev.on('connection.update', async (u) => {
-        const { connection, qr, lastDisconnect } = u;
+        const { connection, qr } = u;
+        
         if (qr) {
             const buffer = await QRCode.toBuffer(qr, { scale: 4 });
+            const otherId = id == 1 ? 2 : 1; // Mendeteksi ID engine satunya
+            
+            // FIX: Tambahkan tombol QR engine satunya agar tidak hilang
+            const markup = {
+                inline_keyboard: [
+                    [{ text: `(ON)${engines[otherId].color} QR${otherId}`, callback_data: `login_${otherId}` }],
+                    [{ text: "❌ CANCEL", callback_data: 'batal' }]
+                ]
+            };
+
             await safeDelete(chatId, engines[id].lastQrMsgId);
             const sent = await bot.sendPhoto(chatId, buffer, { 
                 caption: `${engines[id].color} **SCAN QR ENGINE ${id}**`, 
-                reply_markup: { inline_keyboard: [[{ text: "❌ CANCEL", callback_data: 'batal' }]] } 
+                reply_markup: markup,
+                parse_mode: 'Markdown'
             });
             engines[id].lastQrMsgId = sent.message_id;
         }
+
         if (connection === 'open') {
             await safeDelete(chatId, engines[id].lastQrMsgId);
             bot.sendMessage(chatId, `${engines[id].color} **ENGINE ${id} ONLINE** ✅`, {
-                reply_markup: { inline_keyboard: [[{ text: `🔍 FILTER ${id}`, callback_data: `filter_${id}` }]] }
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: `🔍 FILTER ${id}`, callback_data: `filter_${id}` }],
+                        [{ text: "❌ CANCEL", callback_data: 'batal' }]
+                    ]
+                }
             });
         }
     });
 }
 
+// Handler pesan & callback tetap sama
 bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     if (msg.text === "♻️ RESTART") {
@@ -98,6 +111,10 @@ bot.on('callback_query', async (q) => {
     }
     if (q.data.startsWith('login_')) {
         initWA(chatId, q.data.split('_')[1]);
+    }
+    if (q.data === 'batal') {
+        await safeDelete(chatId, q.message.message_id);
+        bot.sendMessage(chatId, "❌ Dibatalkan.", menuBawah);
     }
     bot.answerCallbackQuery(q.id);
 });
