@@ -59,7 +59,7 @@ async function sendOrUpdateQR(chatId, id, buffer) {
 }
 
 async function initWA(chatId, id) {
-    // --- FORCE CLEAR SESSION SEBELUM LOGIN (Agar tidak muter) ---
+    // Hapus sesi lama agar tidak terjadi konflik
     if (fs.existsSync(engines[id].session)) {
         try { fs.rmSync(engines[id].session, { recursive: true, force: true }); } catch (e) {}
     }
@@ -71,15 +71,15 @@ async function initWA(chatId, id) {
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
+        printQRInTerminal: false,
         browser: ["Ninja Storm", "Chrome", "1.0.0"],
-        // --- OPTIMASI KONEKSI ---
+        // --- PERBAIKAN UTAMA AGAR QR GAMPANG DI SCAN ---
         syncFullHistory: false,
         shouldSyncHistoryMessage: () => false,
-        patchMessageBeforeSending: (message) => message,
-        getMessage: async () => { return { conversation: 'Ninja Storm Engine' } },
+        markOnlineOnConnect: false, // Penting: Jangan langsung online agar tidak berat
         connectTimeoutMs: 60000,
         defaultQueryTimeoutMs: 0,
-        keepAliveIntervalMs: 10000
+        keepAliveIntervalMs: 20000
     });
 
     engines[id].sock.ev.on('creds.update', saveCreds);
@@ -87,8 +87,8 @@ async function initWA(chatId, id) {
         const { connection, qr, lastDisconnect } = u;
         
         if (qr) {
-            // Ukuran scale 6 ideal untuk fokus kamera
-            const buffer = await QRCode.toBuffer(qr, { scale: 6, margin: 2 });
+            // Scale diubah ke 8 agar barcode lebih tajam dan pas di layar Telegram
+            const buffer = await QRCode.toBuffer(qr, { scale: 8, margin: 4 });
             await sendOrUpdateQR(chatId, id, buffer);
         }
 
@@ -157,7 +157,6 @@ bot.on('callback_query', async (q) => {
     if (data.startsWith('filter_')) {
         const id = data.split('_')[1];
         if (!engines[id].sock) return bot.sendMessage(chatId, `❌ Engine ${id} belum login! Silahkan login dulu.`);
-        
         bot.sendMessage(chatId, `${engines[id].color} **FILTER ENGINE ${id} SEDANG JALAN...**`);
         try {
             const lines = fs.readFileSync(engines[id].file, 'utf-8').split('\n').filter(l => l.trim().length > 5);
@@ -168,7 +167,6 @@ bot.on('callback_query', async (q) => {
                 if (res?.exists) aktif.push(line.trim());
             }
             fs.writeFileSync(`aktif_${id}.txt`, aktif.join('\n'));
-            
             bot.sendMessage(chatId, `✅ **FILTER ${id} SELESAI**\nAktif: ${aktif.length}`, {
                 reply_markup: {
                     inline_keyboard: [
@@ -186,24 +184,10 @@ bot.on('callback_query', async (q) => {
             const numbers = fs.readFileSync(`aktif_${id}.txt`, 'utf-8').split('\n').filter(l => l.trim().length > 5);
             const pesanBlast = fs.readFileSync(engines[id].script, 'utf-8'); 
             bot.sendMessage(chatId, `🚀 **ENGINE ${id} MULAI BLAST...**`);
-            
             for (let line of numbers) {
                 const num = line.replace(/[^0-9]/g, '') + "@s.whatsapp.net";
                 await engines[id].sock.sendMessage(num, { text: pesanBlast }).catch(() => {});
                 stats.totalBlast++;
                 stats.hariIni++;
             }
-            bot.sendMessage(chatId, `✅ **ENGINE ${id} SELESAI!**`, {
-                reply_markup: { inline_keyboard: [[{ text: "❌ CANCEL", callback_data: 'batal' }]] }
-            });
-        } catch (e) { bot.sendMessage(chatId, "❌ Gagal. Cek file aktif."); }
-    }
-
-    if (data === 'batal') {
-        await safeDelete(chatId, msgId);
-        bot.sendMessage(chatId, "❌ Aksi dibatalkan.", menuBawah);
-    }
-    bot.answerCallbackQuery(q.id);
-});
-
-bot.onText(/\/start/, (msg) => bot.sendMessage(msg.chat.id, `🌪️ **NINJA STORM ENGINE READY**`, menuBawah));
+            bot.sendMessage(chatId, `✅ **ENGINE ${id} SELESAI!**`,
