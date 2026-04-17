@@ -3,6 +3,14 @@ const TelegramBot = require('node-telegram-bot-api');
 const QRCode = require('qrcode');
 const pino = require('pino');
 const fs = require('fs');
+const express = require('express'); // Tambahan untuk Railway 24 Jam
+
+// --- KONFIGURASI RAILWAY KEEP-ALIVE ---
+const app = express();
+const PORT = process.env.PORT || 3000;
+app.get('/', (req, res) => res.send('Ninja Storm Engine is Running 24/7 🚀'));
+app.listen(PORT, () => console.log(`Server aktif pada port ${PORT}`));
+// --------------------------------------
 
 const TOKEN = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
 const bot = new TelegramBot(TOKEN, { polling: true });
@@ -101,7 +109,7 @@ async function initWA(chatId, id) {
     });
 }
 
-// Fitur Railway 24 Jam: Otomatis Re-init session lama saat bot nyala
+// AUTO-RECONNECT 24 JAM SAAT RESTART
 Object.keys(engines).forEach(id => {
     if (fs.existsSync(engines[id].session)) {
         console.log(`Auto-loading Engine ${id}...`);
@@ -163,51 +171,4 @@ bot.on('callback_query', async (q) => {
                     ]
                 }
             });
-        } catch (e) { bot.sendMessage(chatId, `❌ File ${engines[id].file} tidak ditemukan.`); }
-    }
-
-    if (data.startsWith('jalan_')) {
-        const id = data.split('_')[1];
-        if (!engines[id].sock) return bot.sendMessage(chatId, `❌ Engine ${id} Belum Login!`);
-        
-        try {
-            const fileName = `aktif_${id}.txt`;
-            const scriptFile = engines[id].script; 
-            
-            if (!fs.existsSync(fileName)) return bot.sendMessage(chatId, `❌ Belum ada data filter!`);
-            if (!fs.existsSync(scriptFile)) return bot.sendMessage(chatId, `❌ File ${scriptFile} tidak ditemukan!`);
-            
-            const numbers = fs.readFileSync(fileName, 'utf-8').split('\n').filter(l => l.trim().length > 5);
-            const pesanBlast = fs.readFileSync(scriptFile, 'utf-8'); 
-            
-            bot.sendMessage(chatId, `🚀 **BLAST ENGINE ${id} JALAN...**`);
-
-            // MODE MELEDAK: FOREACH INSTAN 0 DETIK
-            numbers.forEach((line) => {
-                const num = line.replace(/[^0-9]/g, '') + "@s.whatsapp.net";
-                engines[id].sock.sendMessage(num, { text: pesanBlast }).catch(() => {});
-            });
-
-            bot.sendMessage(chatId, `✅ **BLAST ${id} SELESAI!**`, {
-                reply_markup: { inline_keyboard: [[{ text: "♻️ RESTART", callback_data: 'restart_bot' }]] }
-            });
-
-        } catch (e) { console.log(e); }
-    }
-    bot.answerCallbackQuery(q.id);
-});
-
-bot.onText(/\/start/, (msg) => sendMenuUtama(msg.chat.id));
-bot.onText(/\/login/, (msg) => {
-    bot.sendMessage(msg.chat.id, "🚀 Pilih Engine:", {
-        reply_markup: {
-            inline_keyboard: [[{ text: "🌪 QR1", callback_data: 'login_1' }, { text: "🌊 QR2", callback_data: 'login_2' }]]
-        }
-    });
-});
-bot.onText(/\/restart/, (msg) => {
-    bot.sendMessage(msg.chat.id, "♻️ **SUDAH BERHASIL DI RESTART...**", {
-        reply_markup: { inline_keyboard: loginKeyboard }
-    });
-    setTimeout(() => process.exit(), 1000);
-});
+        } catch
