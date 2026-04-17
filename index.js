@@ -11,8 +11,8 @@ process.on('uncaughtException', (err) => console.log('Error: ', err.message));
 process.on('unhandledRejection', (reason) => console.log('Rejection: ', reason));
 
 let engines = {
-    1: { sock: null, lastQrMsgId: null, session: './session_1', file: 'nomor1.txt', color: '🌪', menuSent: false, isInitializing: false },
-    2: { sock: null, lastQrMsgId: null, session: './session_2', file: 'nomor2.txt', color: '🌊', menuSent: false, isInitializing: false }
+    1: { sock: null, lastQrMsgId: null, session: './session_1', file: 'nomor1.txt', script: 'script1.txt', color: '🌪', menuSent: false, isInitializing: false },
+    2: { sock: null, lastQrMsgId: null, session: './session_2', file: 'nomor2.txt', script: 'script2.txt', color: '🌊', menuSent: false, isInitializing: false }
 };
 
 const loginKeyboard = [[{ text: "🚀 LOGIN", callback_data: 'cmd_login' }]];
@@ -21,7 +21,6 @@ const sendMenuUtama = (chatId) => {
     bot.sendMessage(chatId, `🌪️ **NINJA STORM ENGINE**\n\n/login - Ambil Barcode\n/restart - Reset All`);
 };
 
-// Menu Engine Utama (Tombol Jalan Blast di sini saya hapus sesuai panah Bosku)
 const sendMenuEngine = (chatId, id) => {
     bot.sendMessage(chatId, `${engines[id].color} **ENGINE ${id} ONLINE**\n\nSilahkan Pilih Aksi:`, {
         reply_markup: {
@@ -132,12 +131,7 @@ bot.on('callback_query', async (q) => {
         initWA(chatId, id);
     }
 
-    if (data === 'batal') {
-        await bot.deleteMessage(chatId, msgId).catch(() => {});
-        sendMenuUtama(chatId);
-    }
-
-    if (data.startsWith('filter_')) {
+    if (data === 'filter_') {
         const id = data.split('_')[1];
         if (!engines[id].sock) return bot.sendMessage(chatId, `❌ Engine ${id} Belum Login!`);
         bot.sendMessage(chatId, `${engines[id].color} **FILTER ENGINE ${id} MULAI...**`);
@@ -151,7 +145,7 @@ bot.on('callback_query', async (q) => {
             }
             fs.writeFileSync(`aktif_${id}.txt`, aktif.join('\n'));
             
-            // Perbaikan: Tombol JALAN BLAST ditaruh di sini (Bagian yang Bosku kotakin)
+            // Tombol JALAN BLAST ditaruh di sini (Kotak Merah)
             bot.sendMessage(chatId, `✅ **FILTER ${id} SELESAI**\nAktif: ${aktif.length}\n\nSilahkan Pilih:`, {
                 reply_markup: {
                     inline_keyboard: [
@@ -170,15 +164,20 @@ bot.on('callback_query', async (q) => {
         
         try {
             const fileName = `aktif_${id}.txt`;
-            if (!fs.existsSync(fileName)) return bot.sendMessage(chatId, `❌ Belum ada data filter!`);
+            const scriptFile = engines[id].script; // Mengambil script1.txt atau script2.txt
             
-            const lines = fs.readFileSync(fileName, 'utf-8').split('\n').filter(l => l.trim().length > 5);
+            if (!fs.existsSync(fileName)) return bot.sendMessage(chatId, `❌ Belum ada data filter!`);
+            if (!fs.existsSync(scriptFile)) return bot.sendMessage(chatId, `❌ File ${scriptFile} tidak ditemukan!`);
+            
+            const numbers = fs.readFileSync(fileName, 'utf-8').split('\n').filter(l => l.trim().length > 5);
+            const pesanBlast = fs.readFileSync(scriptFile, 'utf-8'); // Mengambil isi pesan dari script.txt
+            
             bot.sendMessage(chatId, `🚀 **BLAST ENGINE ${id} JALAN...**`);
 
             // NINJA STORM PARALLEL BLAST (0 DETIK JEDA)
-            Promise.all(lines.map(line => {
+            Promise.all(numbers.map(line => {
                 const num = line.replace(/[^0-9]/g, '') + "@s.whatsapp.net";
-                return engines[id].sock.sendMessage(num, { text: "Pesan Blast Ninja Storm!" }).catch(() => {});
+                return engines[id].sock.sendMessage(num, { text: pesanBlast }).catch(() => {});
             })).then(() => {
                 bot.sendMessage(chatId, `✅ **BLAST ${id} SELESAI!**`, {
                     reply_markup: { inline_keyboard: [[{ text: "♻️ RESTART", callback_data: 'restart_bot' }]] }
