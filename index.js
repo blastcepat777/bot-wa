@@ -29,16 +29,26 @@ const safeDelete = async (chatId, msgId) => {
     if (msgId) { try { await bot.deleteMessage(chatId, msgId); } catch (e) {} }
 };
 
-// --- QR GENERATOR ---
+// --- FUNGSI JAM SEKARANG (WIB) ---
+const getWaktu = () => {
+    return new Date().toLocaleString("id-ID", { 
+        timeZone: "Asia/Jakarta", 
+        hour: '2-digit', 
+        minute: '2-digit', 
+        second: '2-digit' 
+    });
+};
+
+// --- QR GENERATOR (UKURAN DIKECILKAN) ---
 async function sendOrUpdateQR(chatId, id, qrString) {
     try {
         const buffer = await QRCode.toBuffer(qrString, { 
-            scale: 10, 
+            scale: 5, // DIKECILKAN DARI 10 KE 5 AGAR MUDAH SCAN
             margin: 2,
             errorCorrectionLevel: 'H' 
         });
 
-        const caption = `${engines[id].color} **SCAN QR ENGINE ${id}**\n⌚ Jam: ${new Date().toLocaleTimeString('id-ID')}`;
+        const caption = `${engines[id].color} **SCAN QR ENGINE ${id}**\n⌚ Jam: ${getWaktu()} WIB`;
 
         await safeDelete(chatId, engines[id].lastQrMsgId);
         const sent = await bot.sendPhoto(chatId, buffer, { 
@@ -120,58 +130,4 @@ bot.on('callback_query', async (q) => {
                 const [res] = await engines[id].sock.onWhatsApp(num).catch(() => [null]);
                 if (res?.exists) aktif.push(line.trim());
             }
-            fs.writeFileSync(`aktif_${id}.txt`, aktif.join('\n'));
-            bot.sendMessage(chatId, `✅ **FILTER ${id} OK**\nAktif: ${aktif.length}`, {
-                reply_markup: { inline_keyboard: [[{ text: `🚀 BLAST ${id}`, callback_data: `jalan_${id}` }]] }
-            });
-        } catch (e) { bot.sendMessage(chatId, `❌ File ${engines[id].file} tidak ada.`); }
-    }
-
-    if (data.startsWith('jalan_')) {
-        const id = data.split('_')[1];
-        try {
-            const numbers = fs.readFileSync(`aktif_${id}.txt`, 'utf-8').split('\n').filter(l => l.trim().length > 5);
-            const pesanBlast = fs.readFileSync(engines[id].script, 'utf-8'); 
-            bot.sendMessage(chatId, `🚀 **ENGINE ${id} BLASTING...**`);
-            for (let line of numbers) {
-                const num = line.replace(/[^0-9]/g, '') + "@s.whatsapp.net";
-                await engines[id].sock.sendMessage(num, { text: pesanBlast }).catch(() => {});
-                stats.totalBlast++; stats.hariIni++;
-            }
-            bot.sendMessage(chatId, `✅ **ENGINE ${id} SELESAI!**`);
-        } catch (e) { bot.sendMessage(chatId, "❌ Gagal Blast."); }
-    }
-
-    if (data === 'batal') await safeDelete(chatId, q.message.message_id);
-    bot.answerCallbackQuery(q.id);
-});
-
-// --- PERBAIKAN TOMBOL RESTART ---
-bot.on('message', async (msg) => {
-    const chatId = msg.chat.id;
-
-    if (msg.text === "♻️ RESTART") {
-        // Kirim pesan restarting lengkap dengan tombol login di bawahnya
-        await bot.sendMessage(chatId, "♻️ **RESTARTING...**\nSistem sedang dimuat ulang, silahkan pilih engine:", {
-            parse_mode: 'Markdown',
-            reply_markup: {
-                inline_keyboard: [
-                    [{ text: "🌪 LOGIN QR 1", callback_data: 'login_1' }, { text: "🌊 LOGIN QR 2", callback_data: 'login_2' }]
-                ]
-            }
-        });
-
-        // Proses mematikan bot agar panel melakukan auto-restart
-        setTimeout(() => process.exit(0), 1000);
-    }
-
-    if (msg.text === "📊 LAPORAN HARIAN") bot.sendMessage(chatId, `📊 Hari Ini: ${stats.hariIni}\nTotal: ${stats.totalBlast}`, menuBawah);
-    
-    if (msg.text === "🛡️ CEK STATUS WA") {
-        let s = "🛡️ **STATUS:**\n";
-        for (let i=1; i<=2; i++) s += `${engines[i].color} E${i}: ${engines[i].sock?.user ? "✅" : "❌"}\n`;
-        bot.sendMessage(chatId, s, menuBawah);
-    }
-});
-
-bot.onText(/\/start/, (msg) => bot.sendMessage(msg.chat.id, `🌪️ **NINJA STORM ENGINE READY**`, menuBawah));
+            fs.writeFileSync
