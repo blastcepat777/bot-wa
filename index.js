@@ -20,8 +20,7 @@ let engines = {
 const menuBawah = {
     reply_markup: {
         keyboard: [
-            [{ text: "📊 LAPORAN HARIAN" }],
-            [{ text: "♻️ RESTART" }, { text: "🛡️ CEK STATUS WA" }]
+            [{ text: "📊 LAPORAN HARIAN" }], [{ text: "♻️ RESTART" }, { text: "🛡️ CEK STATUS WA" }]
         ],
         resize_keyboard: true,
         one_time_keyboard: false
