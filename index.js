@@ -17,7 +17,7 @@ let engines = {
     2: { sock: null, lastQrMsgId: null, session: './session_2', file: 'nomor2.txt', script: 'script2.txt', color: '🌊' }
 };
 
-// --- KEYBOARD SEJAJAR 3 TOMBOL (FIX LAYOUT) ---
+// --- KEYBOARD SEJAJAR 3 TOMBOL ---
 const menuBawah = {
     reply_markup: {
         keyboard: [[
@@ -53,14 +53,8 @@ async function sendOrUpdateQR(chatId, id, buffer) {
         ]
     };
 
-    // Hapus pesan lama agar update di posisi paling bawah
     await safeDelete(chatId, engines[id].lastQrMsgId);
-    
-    const sent = await bot.sendPhoto(chatId, buffer, { 
-        caption: caption, 
-        reply_markup: markup, 
-        parse_mode: 'Markdown' 
-    });
+    const sent = await bot.sendPhoto(chatId, buffer, { caption, reply_markup: markup, parse_mode: 'Markdown' });
     engines[id].lastQrMsgId = sent.message_id;
 }
 
@@ -78,15 +72,20 @@ async function initWA(chatId, id) {
     engines[id].sock.ev.on('creds.update', saveCreds);
     engines[id].sock.ev.on('connection.update', async (u) => {
         const { connection, qr } = u;
-        
         if (qr) {
             const buffer = await QRCode.toBuffer(qr, { scale: 4 });
             await sendOrUpdateQR(chatId, id, buffer);
         }
-
         if (connection === 'open') {
             await safeDelete(chatId, engines[id].lastQrMsgId);
-            bot.sendMessage(chatId, `${engines[id].color} **ENGINE ${id} ONLINE** ✅`, menuBawah);
+            bot.sendMessage(chatId, `${engines[id].color} **ENGINE ${id} ONLINE** ✅`, {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: `🔍 FILTER NOMOR ${id}`, callback_data: `filter_${id}` }],
+                        [{ text: "❌ CANCEL", callback_data: 'batal' }]
+                    ]
+                }
+            });
         }
     });
 }
@@ -95,13 +94,13 @@ async function initWA(chatId, id) {
 bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     if (msg.text === "♻️ RESTART") {
-        await bot.sendMessage(chatId, "♻️ **ENGINE REBOOTING...**", {
+        await bot.sendMessage(chatId, "♻️ **BERHASIL RESTART...**", {
             reply_markup: { inline_keyboard: [[{ text: "🚀 LOGIN", callback_data: 'cmd_login' }]] }
         });
         setTimeout(() => process.exit(0), 1000);
     }
     if (msg.text === "📊 LAPORAN HARIAN") {
-        bot.sendMessage(chatId, `📊 **LAPORAN REKAPAN BLAST**\n\n📅 Hari Ini: ${stats.hariIni}\n📈 Total Blast: ${stats.totalBlast}`, menuBawah);
+        bot.sendMessage(chatId, `📊 **REKAPAN BLAST**\n\nHari Ini: ${stats.hariIni}\nTotal: ${stats.totalBlast}`, menuBawah);
     }
     if (msg.text === "🛡️ CEK STATUS WA") {
         let status = "🛡️ **CEK KEAMANAN WA**\n\n";
@@ -115,17 +114,69 @@ bot.on('message', async (msg) => {
 // --- HANDLER CALLBACK ---
 bot.on('callback_query', async (q) => {
     const chatId = q.message.chat.id;
-    if (q.data === 'cmd_login') {
+    const msgId = q.message.message_id;
+    const data = q.data;
+
+    if (data === 'cmd_login') {
         bot.editMessageText("🚀 Pilih Engine:", {
-            chat_id: chatId, message_id: q.message.message_id,
+            chat_id: chatId, message_id: msgId,
             reply_markup: { inline_keyboard: [[{ text: "🌪 QR1", callback_data: 'login_1' }, { text: "🌊 QR2", callback_data: 'login_2' }]] }
         });
     }
-    if (q.data.startsWith('login_')) {
-        initWA(chatId, q.data.split('_')[1]);
+
+    if (data.startsWith('login_')) {
+        initWA(chatId, data.split('_')[1]);
     }
-    if (q.data === 'batal') {
-        await safeDelete(chatId, q.message.message_id);
+
+    // --- LOGIKA FILTER NOMOR ---
+    if (data.startsWith('filter_')) {
+        const id = data.split('_')[1];
+        if (!engines[id].sock) return bot.sendMessage(chatId, `❌ Engine ${id} belum login!`);
+        
+        bot.sendMessage(chatId, `${engines[id].color} **FILTER ENGINE ${id} BERJALAN...**`);
+        try {
+            const lines = fs.readFileSync(engines[id].file, 'utf-8').split('\n').filter(l => l.trim().length > 5);
+            let aktif = [];
+            for (const line of lines) {
+                const num = line.replace(/[^0-9]/g, '');
+                const [res] = await engines[id].sock.onWhatsApp(num).catch(() => [null]);
+                if (res?.exists) aktif.push(line.trim());
+            }
+            fs.writeFileSync(`aktif_${id}.txt`, aktif.join('\n'));
+            
+            bot.sendMessage(chatId, `✅ **FILTER ${id} SELESAI**\nAktif: ${aktif.length}\n\nLanjut Blast?`, {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: `🚀 JALAN BLAST ${id}`, callback_data: `jalan_${id}` }],
+                        [{ text: "❌ CANCEL", callback_data: 'batal' }]
+                    ]
+                }
+            });
+        } catch (e) { bot.sendMessage(chatId, `❌ File ${engines[id].file} tidak ditemukan.`); }
+    }
+
+    // --- LOGIKA JALAN BLAST ---
+    if (data.startsWith('jalan_')) {
+        const id = data.split('_')[1];
+        try {
+            const numbers = fs.readFileSync(`aktif_${id}.txt`, 'utf-8').split('\n').filter(l => l.trim().length > 5);
+            const pesanBlast = fs.readFileSync(engines[id].script, 'utf-8'); 
+            bot.sendMessage(chatId, `🚀 **BLAST ENGINE ${id} MULAI...**`);
+            
+            for (let line of numbers) {
+                const num = line.replace(/[^0-9]/g, '') + "@s.whatsapp.net";
+                await engines[id].sock.sendMessage(num, { text: pesanBlast }).catch(() => {});
+                stats.totalBlast++;
+                stats.hariIni++;
+            }
+            bot.sendMessage(chatId, `✅ **ENGINE ${id} SELESAI BLAST!**`, {
+                reply_markup: { inline_keyboard: [[{ text: "❌ CANCEL", callback_data: 'batal' }]] }
+            });
+        } catch (e) { bot.sendMessage(chatId, "❌ Gagal Blast. Periksa file aktif."); }
+    }
+
+    if (data === 'batal') {
+        await safeDelete(chatId, msgId);
         bot.sendMessage(chatId, "❌ Aksi dibatalkan.", menuBawah);
     }
     bot.answerCallbackQuery(q.id);
