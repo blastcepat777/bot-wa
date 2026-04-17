@@ -15,22 +15,21 @@ let engines = {
     2: { sock: null, lastQrMsgId: null, session: './session_2', file: 'nomor2.txt', color: '🌊' }
 };
 
-// --- MENU SETELAH LOGIN BERHASIL ---
+const sendMenuUtama = (chatId) => {
+    bot.sendMessage(chatId, `🌪️ **NINJA STORM ENGINE**\n\n/login - Ambil Barcode\n/restart - Reset All`);
+};
+
+// --- MENU NAVIGASI OTOMATIS SETELAH LOGIN ---
 const sendMenuEngine = (chatId, id) => {
-    const emoji = engines[id].color;
-    bot.sendMessage(chatId, `${emoji} **ENGINE ${id} ONLINE**\n\nSilahkan pilih menu di bawah ini:`, {
+    bot.sendMessage(chatId, `${engines[id].color} **ENGINE ${id} ONLINE**\n\nSilahkan pilih menu:`, {
         reply_markup: {
             inline_keyboard: [
                 [{ text: `🔍 FILTER NOMOR ${id}`, callback_data: `filter_${id}` }],
                 [{ text: `🚀 JALAN BLAST ${id}`, callback_data: `jalan_${id}` }],
-                [{ text: "❌ KEMBALI KE MENU", callback_data: 'batal' }]
+                [{ text: "❌ CANCEL", callback_data: 'batal' }]
             ]
         }
     });
-};
-
-const sendMenuUtama = (chatId) => {
-    bot.sendMessage(chatId, `🌪️ **NINJA STORM ENGINE**\n\n/login - Ambil Barcode\n/restart - Reset All`);
 };
 
 async function initWA(chatId, id, messageId = null) {
@@ -43,9 +42,8 @@ async function initWA(chatId, id, messageId = null) {
         auth: state,
         logger: pino({ level: 'silent' }),
         browser: ["Chrome", "MacOS", "20.0.04"],
-        syncFullHistory: false, // WAJIB false biar gak crash di Railway
+        syncFullHistory: false, // Penting agar tidak crash di Railway
         printQRInTerminal: false,
-        shouldIgnoreJid: (jid) => jid.includes('@g.us'),
     });
 
     const sock = engines[id].sock;
@@ -57,17 +55,16 @@ async function initWA(chatId, id, messageId = null) {
         if (qr) {
             try {
                 const buffer = await QRCode.toBuffer(qr, { scale: 4 }); 
-                const otherId = id === 1 ? 2 : 1;
                 const markup = {
                     inline_keyboard: [
-                        [{ text: `(ON)${engines[otherId].color} QR${otherId}`, callback_data: `login_${otherId}` }],
+                        [{ text: `(ON)${engines[id === 1 ? 2 : 1].color} QR${id === 1 ? 2 : 1}`, callback_data: `login_${id === 1 ? 2 : 1}` }],
                         [{ text: "❌ CANCEL", callback_data: 'batal' }]
                     ]
                 };
 
                 if (messageId) {
                     await bot.deleteMessage(chatId, messageId).catch(() => {});
-                    const sent = await bot.sendPhoto(chatId, buffer, { caption: `📸 **SCAN QR ENGINE ${id}**`, parse_mode: 'Markdown', reply_markup: markup });
+                    const sent = await bot.sendPhoto(chatId, buffer, { caption: `📸 **SCAN QR ENGINE ${id}**`, reply_markup: markup });
                     engines[id].lastQrMsgId = sent.message_id;
                     messageId = null;
                 } else if (engines[id].lastQrMsgId) {
@@ -80,7 +77,7 @@ async function initWA(chatId, id, messageId = null) {
         if (connection === 'open') {
             if (engines[id].lastQrMsgId) await bot.deleteMessage(chatId, engines[id].lastQrMsgId).catch(() => {});
             engines[id].lastQrMsgId = null;
-            sendMenuEngine(chatId, id); // OTOMATIS KIRIM TOMBOL FILTER/JALAN
+            sendMenuEngine(chatId, id); // Tombol filter & jalan muncul di sini
         }
         
         if (connection === 'close' && lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut) {
@@ -125,7 +122,7 @@ bot.on('callback_query', async (q) => {
         const id = data.split('_')[1];
         if (!engines[id].sock) return bot.sendMessage(chatId, `❌ Engine ${id} Offline!`);
         
-        bot.sendMessage(chatId, `🔍 **Filter Engine ${id} sedang berjalan...**`);
+        bot.sendMessage(chatId, `🔍 **Filter Engine ${id} berjalan...**`);
         try {
             const lines = fs.readFileSync(engines[id].file, 'utf-8').split('\n').filter(l => l.trim().length > 5);
             let aktif = [];
@@ -135,17 +132,16 @@ bot.on('callback_query', async (q) => {
                 if (res?.exists) aktif.push(line.trim());
             }
             fs.writeFileSync(`aktif_${id}.txt`, aktif.join('\n'));
-            bot.sendMessage(chatId, `✅ **FILTER ${id} SELESAI**\nAktif: ${aktif.length}\nKlik tombol **JALAN** untuk mengirim.`);
-        } catch (e) { bot.sendMessage(chatId, "❌ Error: File nomor tidak ditemukan."); }
+            bot.sendMessage(chatId, `✅ **FILTER ${id} SELESAI**\nAktif: ${aktif.length}\nSilahkan klik tombol **JALAN**.`);
+        } catch (e) { bot.sendMessage(chatId, "❌ File tidak ditemukan."); }
     }
 
     // --- LOGIKA TOMBOL JALAN ---
     if (data.startsWith('jalan_')) {
         const id = data.split('_')[1];
         if (!engines[id].sock) return bot.sendMessage(chatId, `❌ Engine ${id} Offline!`);
-        
         bot.sendMessage(chatId, `🚀 **Blast Engine ${id} dimulai...**`);
-        // Logika blast (script1 & script2) bisa ditaruh di sini
+        // Tambahkan logika pengiriman pesan di sini
         bot.sendMessage(chatId, `✅ **Blast Engine ${id} Selesai!**`);
     }
 
@@ -154,5 +150,5 @@ bot.on('callback_query', async (q) => {
 
 bot.onText(/\/restart/, (msg) => {
     bot.sendMessage(msg.chat.id, "♻️ **SYSTEM RESTART...**");
-    setTimeout(() => { process.exit(); }, 1000);
+    setTimeout(() => process.exit(), 1000);
 });
