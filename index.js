@@ -29,20 +29,20 @@ const safeDelete = async (chatId, msgId) => {
     if (msgId) { try { await bot.deleteMessage(chatId, msgId); } catch (e) {} }
 };
 
-// --- FUNGSI UPDATE QR (DIPERTAJAM) ---
+// --- FUNGSI UPDATE QR (DIBUAT RINGAN) ---
 async function sendOrUpdateQR(chatId, id, qrString) {
     try {
         const buffer = await QRCode.toBuffer(qrString, { 
-            scale: 8, 
-            margin: 3,
-            errorCorrectionLevel: 'H'
+            scale: 5, // Dikecilkan sedikit agar titik tidak terlalu rapat
+            margin: 4,
+            errorCorrectionLevel: 'L' // Level Low agar barcode lebih ringan/sederhana
         });
 
         const sekarang = new Date();
         const jam = sekarang.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Jakarta' });
 
         const otherId = id == 1 ? 2 : 1;
-        const caption = `${engines[id].color} **SCAN QR ENGINE ${id} SEKARANG !!**\n⌚ **Update Jam:** ${jam} WIB\n\n_Pastikan kamera fokus, barcode sudah diperbesar._`;
+        const caption = `${engines[id].color} **SCAN QR ENGINE ${id} SEKARANG !!**\n⌚ **Update Jam:** ${jam} WIB\n\n_Barcode sudah diringankan agar scan lebih cepat masuk._`;
 
         await safeDelete(chatId, engines[id].lastQrMsgId);
         const sent = await bot.sendPhoto(chatId, buffer, { 
@@ -60,7 +60,6 @@ async function sendOrUpdateQR(chatId, id, qrString) {
 }
 
 async function initWA(chatId, id) {
-    // Hapus sesi lama agar tidak nyangkut (penyebab muter-muter)
     if (fs.existsSync(engines[id].session)) {
         try { fs.rmSync(engines[id].session, { recursive: true, force: true }); } catch (e) {}
     }
@@ -73,9 +72,12 @@ async function initWA(chatId, id) {
         auth: state,
         logger: pino({ level: 'silent' }),
         browser: ["Ninja Storm", "Chrome", "1.0.0"],
+        // --- SETTING RINGAN ---
         syncFullHistory: false,
         shouldSyncHistoryMessage: () => false,
         markOnlineOnConnect: false,
+        linkPreviewHighQuality: false,
+        maxMsgRetryCount: 1,
         connectTimeoutMs: 60000
     });
 
@@ -86,22 +88,28 @@ async function initWA(chatId, id) {
         
         if (qr) await sendOrUpdateQR(chatId, id, qr);
 
+        // Notifikasi saat mulai menyambungkan
+        if (connection === 'connecting') {
+            console.log(`Engine ${id} sedang menyambungkan...`);
+        }
+
         if (connection === 'open') {
             await safeDelete(chatId, engines[id].lastQrMsgId);
-            bot.sendMessage(chatId, `${engines[id].color} **ENGINE ${id} ONLINE** ✅`, {
+            // Notifikasi Sukses Terhubung
+            bot.sendMessage(chatId, `✅ **NOTIFIKASI: WA BERHASIL TERHUBUNG!**\n\n${engines[id].color} **ENGINE ${id} SEKARANG ONLINE**\nSilahkan pilih filter:`, {
                 reply_markup: {
                     inline_keyboard: [
                         [{ text: `🔍 FILTER 1`, callback_data: `filter_1` }, { text: `🔍 FILTER 2`, callback_data: `filter_2` }],
                         [{ text: "❌ CANCEL", callback_data: 'batal' }]
                     ]
-                }
+                },
+                parse_mode: 'Markdown'
             });
         }
 
         if (connection === 'close') {
             const reason = lastDisconnect?.error?.output?.statusCode;
             if (reason !== DisconnectReason.loggedOut) {
-                // Jangan restart otomatis terlalu cepat agar tidak loop
                 setTimeout(() => initWA(chatId, id), 10000);
             }
         }
@@ -121,9 +129,14 @@ bot.on('callback_query', async (q) => {
     if (q.data.startsWith('login_')) initWA(chatId, q.data.split('_')[1]);
     if (q.data === 'batal') await safeDelete(chatId, msgId);
     
-    // Logika Filter & Jalan Blast tetap sama seperti sebelumnya...
-    // (Tambahkan kodingan filter/jalan Bos di sini jika hilang)
-    
+    // Logika Filter & Jalan Blast
+    if (q.data.startsWith('filter_')) {
+        const id = q.data.split('_')[1];
+        if (!engines[id].sock) return bot.sendMessage(chatId, `❌ Engine ${id} belum login!`);
+        bot.sendMessage(chatId, `${engines[id].color} **FILTER ENGINE ${id} JALAN...**`);
+        // ... (Logika filter Bos di sini)
+    }
+
     bot.answerCallbackQuery(q.id);
 });
 
@@ -132,15 +145,10 @@ bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
 
     if (msg.text === "♻️ RESTART") {
-        // HANYA kirim satu kali pesan restart
         await bot.sendMessage(chatId, "♻️ **BERHASIL RESTART...**\nSistem dimatikan, tunggu 5 detik lalu klik LOGIN.", {
             reply_markup: { inline_keyboard: [[{ text: "🚀 LOGIN", callback_data: 'cmd_login' }]] }
         });
-        
-        // Kasih jeda sebelum benar-benar exit agar pesan terkirim
-        setTimeout(() => {
-            process.exit(0); 
-        }, 2000);
+        setTimeout(() => { process.exit(0); }, 2000);
     }
 
     if (msg.text === "📊 LAPORAN HARIAN") bot.sendMessage(chatId, `📊 Hari Ini: ${stats.hariIni}\nTotal: ${stats.totalBlast}`, menuBawah);
