@@ -44,7 +44,7 @@ async function initWA(chatId, method, phoneNumber = null, msgToEdit = null) {
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
-        browser: ["Mac OS", "Chrome", "121.0.6167.184"],
+        browser: ["Ubuntu", "Chrome", "20.0.04"],
         defaultQueryTimeoutMs: 0,
         printQRInTerminal: false,
     });
