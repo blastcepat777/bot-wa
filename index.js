@@ -16,12 +16,11 @@ let engines = {
     2: { sock: null, lastQrMsgId: null, isProcessing: false, session: './session_2', file: 'nomor2.txt', color: '🌊' }
 };
 
-async function initWA(chatId, id) {
+async function initWA(chatId, id, messageId = null) {
     if (!fs.existsSync(engines[id].session)) fs.mkdirSync(engines[id].session, { recursive: true });
     const { state, saveCreds } = await useMultiFileAuthState(engines[id].session);
     const { version } = await fetchLatestBaileysVersion();
 
-    // Buat logger super silent biar hemat RAM
     const silentLogger = pino({ level: 'silent' });
 
     engines[id].sock = makeWASocket({
@@ -30,9 +29,9 @@ async function initWA(chatId, id) {
         logger: silentLogger,
         browser: [`Ninja Engine ${id}`, "Chrome", "20.0.04"],
         printQRInTerminal: false,
-        generateHighQualityLinkPreview: false, // Hemat RAM
-        syncFullHistory: false, // Penting: Biar gak crash saat load chat lama
-        shouldIgnoreJid: (jid) => jid.includes('@g.us'), // Abaikan grup biar enteng
+        generateHighQualityLinkPreview: false,
+        syncFullHistory: false,
+        shouldIgnoreJid: (jid) => jid.includes('@g.us'),
     });
 
     const sock = engines[id].sock;
@@ -42,18 +41,38 @@ async function initWA(chatId, id) {
         const { connection, qr, lastDisconnect } = u;
 
         if (qr) {
-            const buffer = await QRCode.toBuffer(qr, { scale: 8 }); // Perkecil skala QR biar ringan
-            if (engines[id].lastQrMsgId) await bot.deleteMessage(chatId, engines[id].lastQrMsgId).catch(() => {});
-            const sent = await bot.sendPhoto(chatId, buffer, { 
-                caption: `${engines[id].color} **SCAN QR SEKARANG !! ${id}**\n\n🕒 Update: ${new Date().toLocaleTimeString('id-ID')}`,
-                parse_mode: 'Markdown'
-            });
-            engines[id].lastQrMsgId = sent.message_id;
+            const buffer = await QRCode.toBuffer(qr, { scale: 8 });
+            const otherId = id === 1 ? 2 : 1;
+            const otherEmoji = engines[otherId].color;
+            
+            const caption = `${engines[id].color} **SCAN QR SEKARANG !! ${id}**\n\n🕒 Update: ${new Date().toLocaleTimeString('id-ID')}`;
+            const reply_markup = {
+                inline_keyboard: [[{ text: `(ON)${otherEmoji} QR${otherId}`, callback_data: `login_${otherId}` }]]
+            };
+
+            if (messageId || engines[id].lastQrMsgId) {
+                const targetMsgId = messageId || engines[id].lastQrMsgId;
+                bot.editMessageMedia({
+                    type: 'photo',
+                    media: buffer,
+                    caption: caption,
+                    parse_mode: 'Markdown'
+                }, {
+                    chat_id: chatId,
+                    message_id: targetMsgId,
+                    reply_markup: reply_markup
+                }).catch(() => {});
+                engines[id].lastQrMsgId = targetMsgId;
+            } else {
+                const sent = await bot.sendPhoto(chatId, buffer, { caption, parse_mode: 'Markdown', reply_markup });
+                engines[id].lastQrMsgId = sent.message_id;
+            }
         }
 
         if (connection === 'open') {
             if (engines[id].lastQrMsgId) await bot.deleteMessage(chatId, engines[id].lastQrMsgId).catch(() => {});
             bot.sendMessage(chatId, `✅ **ENGINE ${id} ONLINE (${engines[id].color})**`);
+            engines[id].lastQrMsgId = null;
         }
         
         if (connection === 'close') {
@@ -70,17 +89,28 @@ bot.onText(/\/start/, (msg) => {
 bot.onText(/\/login/, (msg) => {
     bot.sendMessage(msg.chat.id, "🚀 Silahkan Dipilih Barcode Dibawah Ini :", {
         reply_markup: {
-            inline_keyboard: [[
-                { text: "(ON)🌪 QR1", callback_data: 'login_1' },
-                { text: "(ON)🌊 QR2", callback_data: 'login_2' }
-            ]]
+            inline_keyboard: [
+                [{ text: "(ON)🌪 QR1", callback_data: 'login_1' }],
+                [{ text: "(ON)🌊 QR2", callback_data: 'login_2' }]
+            ]
         }
     });
 });
 
-bot.on('callback_query', (q) => {
+bot.on('callback_query', async (q) => {
     const id = q.data === 'login_1' ? 1 : 2;
-    initWA(q.message.chat.id, id);
+    const chatId = q.message.chat.id;
+    const messageId = q.message.message_id;
+
+    // Jika pesan saat ini adalah teks (menu awal), ganti ke loading dulu
+    if (!q.message.photo) {
+        await bot.editMessageText(`⏳ **Menyiapkan QR Engine ${id}...**`, {
+            chat_id: chatId,
+            message_id: messageId
+        }).catch(() => {});
+    }
+
+    initWA(chatId, id, messageId);
     bot.answerCallbackQuery(q.id);
 });
 
