@@ -9,8 +9,8 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 
 // --- DATA & STATS ---
 let engines = {
-    1: { sock: null, lastQrMsgId: null, session: './session_1', color: '🌪', isInitializing: false },
-    2: { sock: null, lastQrMsgId: null, session: './session_2', color: '🌊', isInitializing: false }
+    1: { sock: null, lastQrMsgId: null, session: './session_1', color: '🌪', isInitializing: false, listAktif: [] },
+    2: { sock: null, lastQrMsgId: null, session: './session_2', color: '🌊', isInitializing: false, listAktif: [] }
 };
 
 let stats = {
@@ -35,7 +35,7 @@ const menuUtama = {
     }
 };
 
-// --- FUNGSI PROSES FILTER ---
+// --- FUNGSI PROSES FILTER (YANG DIPERBAIKI) ---
 async function startFilter(chatId, id) {
     const filePath = `./nomor${id}.txt`;
     
@@ -43,14 +43,70 @@ async function startFilter(chatId, id) {
         return bot.sendMessage(chatId, `❌ **File ${filePath} tidak ditemukan!**`, menuUtama);
     }
 
-    const dataNomor = fs.readFileSync(filePath, 'utf-8').split('\n').filter(n => n.trim() !== "");
+    const dataRaw = fs.readFileSync(filePath, 'utf-8').split('\n').map(n => n.trim()).filter(n => n !== "");
     
-    if (dataNomor.length === 0) {
+    if (dataRaw.length === 0) {
         return bot.sendMessage(chatId, `❌ **File ${filePath} kosong!**`, menuUtama);
     }
 
-    bot.sendMessage(chatId, `🔍 **MEMULAI FILTER ENGINE ${id}...**\n📂 File: nomor${id}.txt\n🔢 Total: ${dataNomor.length} nomor`, menuUtama);
-    // Masukkan logika pengiriman pesan Anda di sini
+    const sock = engines[id].sock;
+    if (!sock || !sock.user) {
+        return bot.sendMessage(chatId, `❌ **Engine ${id} Offline!** Silahkan login dulu.`, menuUtama);
+    }
+
+    // Pesan Progress Awal
+    const statusMsg = await bot.sendMessage(chatId, `🔍 **MEMULAI FILTER ENGINE ${id}...**\n━━━━━━━━━━━━━━━━━━━\n⏳ Progress: 0/${dataRaw.length}\n✅ Aktif: 0\n❌ Tidak Aktif: 0\n━━━━━━━━━━━━━━━━━━━`);
+
+    let aktif = [];
+    let tidakAktif = 0;
+
+    for (let i = 0; i < dataRaw.length; i++) {
+        let nomor = dataRaw[i];
+        
+        // Normalisasi format nomor
+        if (nomor.startsWith('0')) nomor = '62' + nomor.slice(1);
+        if (!nomor.startsWith('62')) nomor = '62' + nomor;
+        const jid = nomor.includes('@s.whatsapp.net') ? nomor : `${nomor}@s.whatsapp.net`;
+
+        try {
+            // Cek ke WhatsApp Server
+            const [result] = await sock.onWhatsApp(jid);
+            if (result && result.exists) {
+                aktif.push(result.jid);
+            } else {
+                tidakAktif++;
+            }
+        } catch (e) {
+            tidakAktif++;
+        }
+
+        // Update progress setiap 5 nomor agar Telegram tidak anggap spam
+        if ((i + 1) % 5 === 0 || (i + 1) === dataRaw.length) {
+            await bot.editMessageText(`🔍 **PROSES FILTER ENGINE ${id}...**\n━━━━━━━━━━━━━━━━━━━\n⏳ Progress: ${i + 1}/${dataRaw.length}\n✅ Aktif: ${aktif.length}\n❌ Tidak Aktif: ${tidakAktif}\n━━━━━━━━━━━━━━━━━━━`, {
+                chat_id: chatId,
+                message_id: statusMsg.message_id
+            }).catch(() => {});
+        }
+        
+        // Delay dikit biar aman dari banned (500ms)
+        await new Promise(res => setTimeout(res, 500));
+    }
+
+    // Simpan hasil ke memori untuk blast nanti
+    engines[id].listAktif = aktif;
+
+    // Laporan Akhir
+    const hasilText = `✅ **FILTER SELESAI ENGINE ${id}!**\n━━━━━━━━━━━━━━━━━━━\n📊 **HASIL AKHIR:**\n🟢 WA Aktif: ${aktif.length}\n🔴 Tidak Aktif: ${tidakAktif}\n📦 Total Data: ${dataRaw.length}\n━━━━━━━━━━━━━━━━━━━\n\nNomor aktif sudah siap di-blast.`;
+    
+    bot.sendMessage(chatId, hasilText, {
+        parse_mode: 'Markdown',
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: "🚀 LANJUT BLAST SEKARANG", callback_data: `start_blast_${id}` }],
+                [{ text: "♻️ ULANGI FILTER", callback_data: `start_filter_${id}` }]
+            ]
+        }
+    });
 }
 
 // --- CORE FUNCTIONS ---
@@ -124,7 +180,6 @@ async function initWA(chatId, id, msgIdToEdit) {
                 engines[id].isInitializing = false;
                 if (engines[id].lastQrMsgId) await bot.deleteMessage(chatId, engines[id].lastQrMsgId).catch(() => {});
                 
-                // --- PERBAIKAN: Menambahkan Tombol Filter ---
                 bot.sendMessage(chatId, `${engines[id].color} **ENGINE ${id} BERHASIL TERHUBUNG!**`, {
                     parse_mode: 'Markdown',
                     reply_markup: {
@@ -231,10 +286,9 @@ bot.on('callback_query', async (q) => {
         initWA(chatId, id, msgId); 
     }
 
-    // --- PERBAIKAN: Handler untuk Klik Tombol Filter ---
     if (q.data.startsWith('start_filter_')) {
         const id = q.data.split('_')[2];
-        bot.answerCallbackQuery(q.id, { text: `Menjalankan Engine ${id}...` });
+        bot.answerCallbackQuery(q.id, { text: `Menjalankan Filter Engine ${id}...` });
         await startFilter(chatId, id);
     }
 
