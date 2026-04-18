@@ -1,5 +1,3 @@
-Oke tetap konsisten ya, saya mau nya tetap di tempat yang sama saja, begitu muncul barcode, nah tetap di tempat yang sama seperti yang saya kotakin, agar tidak numpuk banyak chat, begitu juga dengan yang lain (TOMBOL DI BAWAH KEYBOARD) MANA BODOHH? !!
-
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require("@whiskeysockets/baileys");
 const TelegramBot = require('node-telegram-bot-api');
 const QRCode = require('qrcode');
