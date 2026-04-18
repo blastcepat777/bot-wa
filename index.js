@@ -35,13 +35,30 @@ const menuUtama = {
     }
 };
 
+// --- FUNGSI PROSES FILTER ---
+async function startFilter(chatId, id) {
+    const filePath = `./nomor${id}.txt`;
+    
+    if (!fs.existsSync(filePath)) {
+        return bot.sendMessage(chatId, `❌ **File ${filePath} tidak ditemukan!**`, menuUtama);
+    }
+
+    const dataNomor = fs.readFileSync(filePath, 'utf-8').split('\n').filter(n => n.trim() !== "");
+    
+    if (dataNomor.length === 0) {
+        return bot.sendMessage(chatId, `❌ **File ${filePath} kosong!**`, menuUtama);
+    }
+
+    bot.sendMessage(chatId, `🔍 **MEMULAI FILTER ENGINE ${id}...**\n📂 File: nomor${id}.txt\n🔢 Total: ${dataNomor.length} nomor`, menuUtama);
+    // Masukkan logika pengiriman pesan Anda di sini
+}
+
 // --- CORE FUNCTIONS ---
 async function initWA(chatId, id, msgIdToEdit) {
     if (engines[id].isInitializing) return;
     engines[id].isInitializing = true;
 
     try {
-        // Pastikan folder sesi bersih jika memulai baru
         if (!fs.existsSync(engines[id].session)) {
             fs.mkdirSync(engines[id].session, { recursive: true });
         }
@@ -55,7 +72,7 @@ async function initWA(chatId, id, msgIdToEdit) {
             logger: pino({ level: 'silent' }),
             browser: ["Ninja Storm", "Chrome", "1.0.0"],
             printQRInTerminal: false,
-            syncFullHistory: false, // Mempercepat koneksi & scan
+            syncFullHistory: false, 
             connectTimeoutMs: 60000,
             defaultQueryTimeoutMs: 0,
             keepAliveIntervalMs: 10000
@@ -71,7 +88,7 @@ async function initWA(chatId, id, msgIdToEdit) {
                 try {
                     const buffer = await QRCode.toBuffer(qr, { scale: 5 });
                     const opts = {
-                        caption: `${engines[id].color} **SCAN QR ENGINE ${id} SEKARANG !!**\n\n🕒 Generate: ${getWIBTime()}\n\n*Tips: Jika muter terus, hapus tautan perangkat di WA HP lalu scan ulang.*`,
+                        caption: `${engines[id].color} **SCAN QR ENGINE ${id} SEKARANG !!**\n\n🕒 Generate: ${getWIBTime()}`,
                         parse_mode: 'Markdown',
                         reply_markup: {
                             inline_keyboard: [
@@ -106,7 +123,16 @@ async function initWA(chatId, id, msgIdToEdit) {
             if (connection === 'open') {
                 engines[id].isInitializing = false;
                 if (engines[id].lastQrMsgId) await bot.deleteMessage(chatId, engines[id].lastQrMsgId).catch(() => {});
-                bot.sendMessage(chatId, `${engines[id].color} **ENGINE ${id} BERHASIL TERHUBUNG!**`, menuUtama);
+                
+                // --- PERBAIKAN: Menambahkan Tombol Filter ---
+                bot.sendMessage(chatId, `${engines[id].color} **ENGINE ${id} BERHASIL TERHUBUNG!**`, {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: `🔍 MULAI FILTER (nomor${id}.txt)`, callback_data: `start_filter_${id}` }]
+                        ]
+                    }
+                });
             }
         });
     } catch (err) {
@@ -116,7 +142,6 @@ async function initWA(chatId, id, msgIdToEdit) {
 }
 
 // --- HANDLERS ---
-
 const handleLogout = async (chatId) => {
     const msg = await bot.sendMessage(chatId, "🚪 **MEMBERSIHKAN SEMUA SESI...**", menuUtama);
     
@@ -129,7 +154,6 @@ const handleLogout = async (chatId) => {
             engines[i].sock = null;
         }
         
-        // Paksa hapus folder secara rekursif
         if (fs.existsSync(engines[i].session)) {
             try {
                 fs.rmSync(engines[i].session, { recursive: true, force: true });
@@ -205,6 +229,13 @@ bot.on('callback_query', async (q) => {
         const id = q.data.split('_')[1];
         await bot.editMessageText(`⏳ **Menyiapkan QR Engine ${id}...**`, { chat_id: chatId, message_id: msgId });
         initWA(chatId, id, msgId); 
+    }
+
+    // --- PERBAIKAN: Handler untuk Klik Tombol Filter ---
+    if (q.data.startsWith('start_filter_')) {
+        const id = q.data.split('_')[2];
+        bot.answerCallbackQuery(q.id, { text: `Menjalankan Engine ${id}...` });
+        await startFilter(chatId, id);
     }
 
     if (q.data === 'view_bulanan') {
