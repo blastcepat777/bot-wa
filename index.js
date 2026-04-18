@@ -17,7 +17,6 @@ if (fs.existsSync(STATS_FILE)) {
 
 const saveStats = () => fs.writeFileSync(STATS_FILE, JSON.stringify(stats, null, 2));
 
-// Penambahan config & step untuk menangkap input
 let engines = {
     1: { sock: null, lastQrMsgId: null, session: './session_1', color: '🌪', isInitializing: false, qrTimeout: null, config: { ev: 0, every: 0, delay: 0 }, step: null },
     2: { sock: null, lastQrMsgId: null, session: './session_2', color: '🌊', isInitializing: false, qrTimeout: null, config: { ev: 0, every: 0, delay: 0 }, step: null }
@@ -120,11 +119,10 @@ bot.on('callback_query', async (q) => {
     const chatId = q.message.chat.id;
     const msgId = q.message.message_id;
 
-    // --- LOGIC FILTER DIROMBAK DISINI ---
     if (q.data.startsWith('start_filter_')) {
         const id = q.data.split('_')[2];
         engines[id].step = 'input_ev';
-        bot.sendMessage(chatId, `⌨️ Masukkan **ev num**:`);
+        bot.sendMessage(chatId, `⌨️ **SETUP ENGINE ${id}**\n━━━━━━━━━━━━━━\nMasukkan jumlah **ev num**:`, { parse_mode: 'Markdown' });
     }
 
     if (q.data.startsWith('execute_filter_')) {
@@ -133,27 +131,25 @@ bot.on('callback_query', async (q) => {
         const sock = engines[id].sock;
         if (!sock) return bot.answerCallbackQuery(q.id, { text: "❌ Engine Offline!" });
 
-        bot.sendMessage(chatId, `🔍 **MULAI FILTER...**\nEv: ${conf.ev} | Every: ${conf.every} | Delay: ${conf.delay}s`);
+        bot.sendMessage(chatId, `🔍 **STATUS FILTERING...**\n━━━━━━━━━━━━━━\n📊 Ev    : \`${conf.ev}\` nomor\n⏳ Every : \`${conf.every}\` nomor\n🕒 Delay : \`${conf.delay}\` detik`, { parse_mode: 'Markdown' });
 
         try {
             const dataNomor = fs.readFileSync(`./nomor${id}.txt`, 'utf-8').split('\n').filter(n => n.trim() !== "").slice(0, conf.ev);
             for (let i = 0; i < dataNomor.length; i++) {
                 let nomor = dataNomor[i].replace(/[^0-9]/g, "");
                 let jid = (nomor.startsWith('0') ? '62' + nomor.slice(1) : (nomor.startsWith('62') ? nomor : '62' + nomor)) + '@s.whatsapp.net';
-                
                 await sock.onWhatsApp(jid).catch(() => {});
-
                 if (conf.every > 0 && conf.delay > 0 && (i + 1) % conf.every === 0) {
                     await new Promise(res => setTimeout(res, conf.delay * 1000));
                 }
             }
-            bot.sendMessage(chatId, `✅ **FILTER SELESAI**\nHistory percakapan telah dibuka.`, {
+            bot.sendMessage(chatId, `✅ **FILTER SELESAI**\n━━━━━━━━━━━━━━\nHistory percakapan telah dibuka secara waterfall.`, {
+                parse_mode: 'Markdown',
                 reply_markup: { inline_keyboard: [[{ text: "🚀 JALAN TURBO", callback_data: `jalan_blast_${id}` }], [{ text: "❌ BATAL", callback_data: "batal" }]] }
             });
         } catch (e) { bot.sendMessage(chatId, "❌ File nomor error."); }
     }
 
-    // --- SISA CALLBACK TETAP SAMA ---
     if (q.data.startsWith('jalan_blast_')) {
         const id = q.data.split('_')[2];
         const sock = engines[id].sock;
@@ -183,7 +179,6 @@ bot.on('callback_query', async (q) => {
     bot.answerCallbackQuery(q.id);
 });
 
-// --- MESSAGE HANDLER UNTUK INPUT SETTING ---
 bot.on('message', async (msg) => {
     const text = msg.text;
     const chatId = msg.chat.id;
@@ -191,20 +186,29 @@ bot.on('message', async (msg) => {
     for (let id in engines) {
         if (engines[id].step) {
             const val = parseInt(text);
-            if (isNaN(val)) return bot.sendMessage(chatId, "❌ Masukkan angka saja!");
+            if (isNaN(val)) return bot.sendMessage(chatId, "❌ **Gagal!** Masukkan angka saja.");
 
             if (engines[id].step === 'input_ev') {
                 engines[id].config.ev = val;
                 engines[id].step = 'input_every';
-                return bot.sendMessage(chatId, `✅ ev num: **${val}**\n\n⌨️ Masukkan **every**:`);
+                return bot.sendMessage(chatId, `✅ **Ev Num :** \`${val}\`\n━━━━━━━━━━━━━━\n⌨️ Masukkan jumlah **every**:`, { parse_mode: 'Markdown' });
             } else if (engines[id].step === 'input_every') {
                 engines[id].config.every = val;
                 engines[id].step = 'input_delay';
-                return bot.sendMessage(chatId, `✅ every: **${val}**\n\n⌨️ Masukkan **delay**:`);
+                return bot.sendMessage(chatId, `✅ **Every :** \`${val}\`\n━━━━━━━━━━━━━━\n⌨️ Masukkan jumlah **delay**:`, { parse_mode: 'Markdown' });
             } else if (engines[id].step === 'input_delay') {
                 engines[id].config.delay = val;
                 engines[id].step = null;
-                return bot.sendMessage(chatId, `⚙️ **SETTING ENGINE ${id} SELESAI**\n\nev num : every : delay\n${engines[id].config.ev} : ${engines[id].config.every} : ${engines[id].config.delay}\n\nKlik di bawah untuk mulai:`, {
+                const conf = engines[id].config;
+                return bot.sendMessage(chatId, 
+                    `⚙️ **SETTING ENGINE ${id} SELESAI**\n` +
+                    `━━━━━━━━━━━━━━\n` +
+                    `📊 **Ev Num** : \`${conf.ev}\` nomor\n` +
+                    `⏳ **Every** : \`${conf.every}\` nomor\n` +
+                    `🕒 **Delay** : \`${conf.delay}\` detik\n` +
+                    `━━━━━━━━━━━━━━\n` +
+                    `👇 *Silahkan klik tombol di bawah :*`, {
+                    parse_mode: 'Markdown',
                     reply_markup: { inline_keyboard: [[{ text: "🔍 MULAI FILTER", callback_data: `execute_filter_${id}` }]] }
                 });
             }
@@ -212,14 +216,15 @@ bot.on('message', async (msg) => {
     }
 
     if (text === "📊 LAPORAN HARIAN") {
-        bot.sendMessage(chatId, `📊 **LAPORAN BLAST NINJA**\n\n🚀 Hari Ini: ${stats.totalHariIni}\n📈 Total: ${stats.rekapanTotalHarian}`);
+        const lap = `📊 **LAPORAN BLAST NINJA**\n━━━━━━━━━━━━━━\n🕒 **Terakhir:** ${stats.terakhirBlast}\n🚀 **Hari Ini:** \`${stats.totalHariIni}\` chat\n📈 **Total Harian:** \`${stats.rekapanTotalHarian}\` chat\n━━━━━━━━━━━━━━`;
+        bot.sendMessage(chatId, lap, { parse_mode: 'Markdown' });
     }
     if (text === "♻️ RESTART") {
         await cleanupEngine(chatId, 1); await cleanupEngine(chatId, 2);
         bot.sendMessage(chatId, "♻️ **SYSTEM RESTART**", { reply_markup: { inline_keyboard: [[{ text: "🚀 LOGIN", callback_data: "pilih_engine" }]] } });
     }
     if (text === "🛡️ CEK STATUS WA") {
-        let st = "🛡️ **STATUS ENGINE**\n";
+        let st = "🛡️ **STATUS ENGINE**\n━━━━━━━━━━━━━━\n";
         for (let i=1; i<=2; i++) st += `${engines[i].color} Engine ${i}: ${engines[i].sock?.user ? "✅ ONLINE" : "❌ OFFLINE"}\n`;
         bot.sendMessage(chatId, st, menuUtama);
     }
