@@ -15,7 +15,7 @@ let engines = {
 
 let stats = {
     totalHariIni: 0,
-    rekapanTotalHarian: 0, // Tambahan untuk laporan sesuai gambar
+    rekapanTotalHarian: 0, 
     terakhirBlast: "-"
 };
 
@@ -83,7 +83,8 @@ async function initWA(chatId, id, msgIdToEdit) {
         sock.ev.on('connection.update', async (u) => {
             const { connection, lastDisconnect, qr } = u;
 
-            if (qr && chatId && engines[id].isInitializing) { // Cek isInitializing agar tidak spam
+            // Proteksi: Hanya kirim QR jika isInitializing masih TRUE
+            if (qr && chatId && engines[id].isInitializing) { 
                 try {
                     const buffer = await QRCode.toBuffer(qr, { scale: 5 });
                     if (msgIdToEdit) { await bot.deleteMessage(chatId, msgIdToEdit).catch(() => {}); msgIdToEdit = null; }
@@ -98,6 +99,7 @@ async function initWA(chatId, id, msgIdToEdit) {
             }
 
             if (connection === 'close') {
+                // Jangan reconnect jika status isInitializing sudah FALSE (akibat Restart)
                 const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut && engines[id].isInitializing;
                 if (!shouldReconnect) {
                     engines[id].isInitializing = false;
@@ -163,6 +165,12 @@ bot.on('callback_query', async (q) => {
         } catch (e) { bot.sendMessage(chatId, "❌ Error teknis saat membaca file."); }
     }
 
+    // HANDLER REKAPAN BULANAN (Agar tombol berfungsi)
+    if (q.data === 'cek_bulanan') {
+        const bln = new Date().toLocaleString('id-ID', { month: 'long', year: 'numeric' });
+        bot.sendMessage(chatId, `📂 **REKAPAN BLAST BULANAN**\n━━━━━━━━━━━━━━━━━━━\n📅 Bulan: ${bln}\n📈 Total Terkirim: ${stats.rekapanTotalHarian} nomor\n━━━━━━━━━━━━━━━━━━━\n_Data ter-reset otomatis jika server mati._`, { parse_mode: 'Markdown' });
+    }
+
     if (q.data === 'pilih_engine') {
         bot.editMessageText("📌 **PILIH ENGINE:**", { chat_id: chatId, message_id: msgId,
             reply_markup: { inline_keyboard: [[{ text: "🌪 ENGINE 1", callback_data: "login_1" }, { text: "🌊 ENGINE 2", callback_data: "login_2" }], [{ text: "❌ BATAL", callback_data: "batal" }]] }
@@ -188,19 +196,25 @@ bot.on('message', async (msg) => {
 
     if (text === "♻️ RESTART") {
         for (let i in engines) { 
-            engines[i].isInitializing = false; // Matikan inisialisasi agar tidak auto-QR
+            engines[i].isInitializing = false; // KUNCI UTAMA: Stop inisialisasi
             if (engines[i].sock) { 
-                try { engines[i].sock.end(); } catch(e){} 
+                try { 
+                    engines[i].sock.ev.removeAllListeners('connection.update'); // Hapus listener agar tidak reconnect otomatis
+                    engines[i].sock.end(); 
+                } catch(e){} 
                 engines[i].sock = null; 
             } 
+            if (engines[i].lastQrMsgId) {
+                bot.deleteMessage(chatId, engines[i].lastQrMsgId).catch(() => {});
+                engines[i].lastQrMsgId = null;
+            }
         }
-        bot.sendMessage(chatId, "♻️ **SYSTEM RESTART BERHASIL**\nSemua koneksi diputus. Silakan Login kembali jika diperlukan.", { 
+        bot.sendMessage(chatId, "♻️ **SYSTEM RESTART TOTAL BERHASIL**\nSemua koneksi diputus & status dibersihkan.\nKlik login jika ingin mulai ulang.", { 
             reply_markup: { inline_keyboard: [[{ text: "🚀 LOGIN", callback_data: "pilih_engine" }]] } 
         });
     }
 
     if (text === "📊 LAPORAN HARIAN") {
-        // Tampilan laporan sesuai gambar user
         const laporanTeks = `📊 **LAPORAN BLAST NINJA**\n━━━━━━━━━━━━━━━━━━━\n` +
                             `🕒 **Terakhir Blast:**\n${stats.terakhirBlast}\n\n` +
                             `🚀 **Total Blast Hari Ini:** ${stats.totalHariIni}\n` +
