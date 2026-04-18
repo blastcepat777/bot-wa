@@ -100,29 +100,31 @@ async function initWA(chatId, id, msgIdToEdit) {
 
 // --- HANDLERS ---
 
-// Fungsi Reset Logika
+// Fungsi Reset Logika (Bagian yang diperbaiki sesuai permintaan Anda)
 const handleRestartLogika = async (chatId) => {
-    const rebootMsg = await bot.sendMessage(chatId, "♻️ **SYSTEM REBOOTING...**", {
-        parse_mode: 'Markdown',
-        ...menuBawah
-    });
+    // 1. Kirim pesan indikator rebooting
+    const rebootMsg = await bot.sendMessage(chatId, "♻️ **SYSTEM REBOOTING...**", menuBawah);
     
-    // Matikan semua koneksi
+    // 2. Matikan semua koneksi engine
     for (let i in engines) { 
-        if (engines[i].sock) { engines[i].sock.end(); engines[i].sock = null; }
+        if (engines[i].sock) { 
+            engines[i].sock.end(); 
+            engines[i].sock = null; 
+        }
         engines[i].isInitializing = false; 
     }
     
-    // Jeda 2 detik lalu EDIT pesan yang sama
-    setTimeout(() => {
-        bot.editMessageText("♻️ **SYSTEM BERHASIL RESTART**\nSilahkan klik tombol di bawah untuk login:", {
-            chat_id: chatId,
-            message_id: rebootMsg.message_id,
+    // 3. Jeda 2 detik, Hapus pesan "Rebooting", lalu Kirim pesan "Berhasil" + Tombol LOGIN
+    setTimeout(async () => {
+        await bot.deleteMessage(chatId, rebootMsg.message_id).catch(() => {});
+        
+        bot.sendMessage(chatId, "♻️ **SYSTEM BERHASIL RESTART**\nSilahkan klik tombol di bawah untuk login:", {
             parse_mode: 'Markdown',
             reply_markup: { 
-                inline_keyboard: [[{ text: "🚀 LOGIN", callback_data: "pilih_engine" }]]
+                inline_keyboard: [[{ text: "🚀 LOGIN", callback_data: "pilih_engine" }]],
+                ...menuBawah.reply_markup 
             }
-        }).catch((err) => console.log("Gagal edit pesan restart"));
+        });
     }, 2000);
 };
 
