@@ -16,8 +16,9 @@ const getWIBTime = () => {
     return new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta", dateStyle: 'medium', timeStyle: 'medium' }) + " WIB";
 };
 
-// --- KEYBOARD PERMANEN ---
-const menuBawah = {
+// --- KONFIGURASI KEYBOARD PERMANEN ---
+// Kita definisikan markup ini agar bisa dipanggil berulang kali dengan konsisten
+const menuUtama = {
     reply_markup: {
         keyboard: [
             [{ text: "♻️ RESTART" }], 
@@ -34,7 +35,7 @@ const sendPesanOnline = (chatId) => {
         parse_mode: 'Markdown',
         reply_markup: {
             inline_keyboard: [[{ text: "🚀 LOGIN", callback_data: "pilih_engine" }]],
-            ...menuBawah.reply_markup 
+            ...menuUtama.reply_markup 
         }
     });
 };
@@ -52,8 +53,7 @@ async function initWA(chatId, id, msgIdToEdit) {
             version,
             auth: state,
             logger: pino({ level: 'silent' }),
-            browser: ["Ninja Storm", "Chrome", "1.0.0"],
-            printQRInTerminal: false
+            browser: ["Ninja Storm", "Chrome", "1.0.0"]
         });
 
         const sock = engines[id].sock;
@@ -62,7 +62,6 @@ async function initWA(chatId, id, msgIdToEdit) {
         sock.ev.on('connection.update', async (u) => {
             const { connection, lastDisconnect, qr } = u;
 
-            // Handle QR
             if (qr && chatId) {
                 try {
                     const buffer = await QRCode.toBuffer(qr, { scale: 4 });
@@ -85,16 +84,13 @@ async function initWA(chatId, id, msgIdToEdit) {
                     if (engines[id].lastQrMsgId) await bot.deleteMessage(chatId, engines[id].lastQrMsgId).catch(() => {});
                     const sent = await bot.sendPhoto(chatId, buffer, opts);
                     engines[id].lastQrMsgId = sent.message_id;
-                } catch (e) { console.log("QR Render Error"); }
+                } catch (e) { console.log("QR Error"); }
             }
 
-            // Handle Disconnect (Penyebab Crash Utama)
             if (connection === 'close') {
-                const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+                const reason = lastDisconnect?.error?.output?.statusCode;
                 engines[id].isInitializing = false;
-                console.log(`Engine ${id} disconnect. Reconnecting: ${shouldReconnect}`);
-                if (shouldReconnect) {
-                    // Jangan langsung panggil initWA untuk menghindari loop crash
+                if (reason !== DisconnectReason.loggedOut) {
                     setTimeout(() => initWA(chatId, id), 3000);
                 }
             }
@@ -106,45 +102,51 @@ async function initWA(chatId, id, msgIdToEdit) {
                     parse_mode: 'Markdown',
                     reply_markup: {
                         inline_keyboard: [[{ text: `🔍 FILTER NOMOR ${id}`, callback_data: `filter_${id}` }]],
-                        ...menuBawah.reply_markup
+                        ...menuUtama.reply_markup
                     }
                 });
             }
         });
     } catch (err) {
-        console.error(`Fatal Error on Engine ${id}:`, err);
         engines[id].isInitializing = false;
+        console.error(err);
     }
 }
 
 // --- HANDLERS ---
 
+// Fungsi Restart (FIXED: Keyboard Menu Bawah & Tombol Login muncul bareng)
 const handleRestartLogika = async (chatId) => {
-    const rebootMsg = await bot.sendMessage(chatId, "♻️ **SYSTEM REBOOTING...**", menuBawah);
+    // Kirim indikator awal agar user tahu proses berjalan
+    const rebootMsg = await bot.sendMessage(chatId, "♻️ **SYSTEM REBOOTING...**", menuUtama);
     
+    // Matikan engine
     for (let i in engines) { 
-        try {
-            if (engines[i].sock) { 
-                engines[i].sock.end(); 
-                engines[i].sock = null; 
-            }
-        } catch (e) {}
+        if (engines[i].sock) { 
+            try { engines[i].sock.end(); } catch (e) {}
+            engines[i].sock = null; 
+        }
         engines[i].isInitializing = false; 
     }
     
     setTimeout(async () => {
+        // Hapus pesan "Rebooting"
         await bot.deleteMessage(chatId, rebootMsg.message_id).catch(() => {});
         
+        // Kirim pesan sukses dengan TOMBOL LOGIN dan MENU BAWAH sekaligus
         bot.sendMessage(chatId, "♻️ **SYSTEM BERHASIL RESTART**\nSilahkan klik tombol di bawah untuk login:", {
             parse_mode: 'Markdown',
             reply_markup: { 
                 inline_keyboard: [[{ text: "🚀 LOGIN", callback_data: "pilih_engine" }]],
-                ...menuBawah.reply_markup 
+                keyboard: menuUtama.reply_markup.keyboard,
+                resize_keyboard: true,
+                one_time_keyboard: false
             }
         });
     }, 2000);
 };
 
+// Handler Command & Text
 bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text;
@@ -154,16 +156,17 @@ bot.on('message', async (msg) => {
     }
 
     if (text === "📊 LAPORAN HARIAN") {
-        bot.sendMessage(chatId, `📊 **LAPORAN BLAST**\nTotal Berhasil: 0`, menuBawah);
+        bot.sendMessage(chatId, `📊 **LAPORAN BLAST**\nTotal Berhasil: 0`, menuUtama);
     }
 
     if (text === "🛡️ CEK STATUS WA") {
         let status = "🛡️ **STATUS ENGINE**\n";
         for (let i=1; i<=2; i++) status += `${engines[i].color} Engine ${i}: ${engines[i].sock?.user ? "✅ ONLINE" : "❌ OFFLINE"}\n`;
-        bot.sendMessage(chatId, status, menuBawah);
+        bot.sendMessage(chatId, status, menuUtama);
     }
 });
 
+// Handler Callback Tombol
 bot.on('callback_query', async (q) => {
     const chatId = q.message.chat.id;
     const msgId = q.message.message_id;
@@ -198,9 +201,7 @@ bot.on('callback_query', async (q) => {
     bot.answerCallbackQuery(q.id);
 });
 
-// Anti-Crash Global
-process.on('uncaughtException', (err) => {
-    console.error('Ada Error Tidak Terduga:', err);
-});
+// Anti-Crash
+process.on('uncaughtException', (err) => { console.error('Error:', err); });
 
 bot.onText(/\/start/, (msg) => sendPesanOnline(msg.chat.id));
