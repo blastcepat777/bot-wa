@@ -119,6 +119,24 @@ bot.on('callback_query', async (q) => {
     const chatId = q.message.chat.id;
     const msgId = q.message.message_id;
 
+    // --- LOGIKA CEK REKAPAN BULANAN (YANG DIPERBAIKI) ---
+    if (q.data === 'cek_bulanan') {
+        const folder = './rekap_bulanan';
+        if (!fs.existsSync(folder)) fs.mkdirSync(folder);
+        
+        const files = fs.readdirSync(folder).filter(f => f.endsWith('.txt') || f.endsWith('.json'));
+        
+        if (files.length === 0) {
+            return bot.answerCallbackQuery(q.id, { text: "❌ Belum ada file rekapan di folder rekap_bulanan", show_alert: true });
+        }
+
+        let txt = "📂 **HASIL REKAPAN BULANAN**\n━━━━━━━━━━━━━━\n";
+        files.forEach((f, i) => { txt += `${i+1}. \`${f}\`\n`; });
+        
+        bot.sendMessage(chatId, txt, { parse_mode: 'Markdown' });
+        return bot.answerCallbackQuery(q.id);
+    }
+
     if (q.data.startsWith('start_filter_')) {
         const id = q.data.split('_')[2];
         engines[id].step = 'input_ev';
@@ -221,26 +239,6 @@ bot.on('message', async (msg) => {
             parse_mode: 'Markdown',
             reply_markup: { 
                 inline_keyboard: [[{ text: "📂 LIHAT REKAPAN BULANAN", callback_data: "cek_bulanan" }]] 
-
-                // --- TAMBAHAN LOGIK UNTUK REKAPAN BULANAN ---
-    if (q.data === 'cek_bulanan') {
-        const folderPath = './rekap_bulanan'; // Pastikan folder ini ada
-        if (!fs.existsSync(folderPath)) {
-            return bot.answerCallbackQuery(q.id, { text: "❌ Folder rekapan belum ada!", show_alert: true });
-        }
-
-        const files = fs.readdirSync(folderPath).filter(file => file.endsWith('.txt') || file.endsWith('.json'));
-        if (files.length === 0) {
-            return bot.answerCallbackQuery(q.id, { text: "📭 Belum ada file rekapan.", show_alert: true });
-        }
-
-        let listFile = "📂 **DAFTAR REKAPAN BULANAN**\n━━━━━━━━━━━━━━\n";
-        files.forEach((file, i) => {
-            listFile += `${i + 1}. \`${file}\`\n`;
-        });
-
-        bot.sendMessage(chatId, listFile, { parse_mode: 'Markdown' });
-    }
             }
         });
     }
