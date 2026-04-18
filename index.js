@@ -15,8 +15,6 @@ let engines = {
 
 let stats = {
     totalHariIni: 0,
-    rekapanHarian: 0,
-    rekapanBulanan: 0,
     terakhirBlast: "-"
 };
 
@@ -100,12 +98,13 @@ async function initWA(chatId, id, msgIdToEdit) {
 
             if (connection === 'close') {
                 engines[id].isInitializing = false;
+                engines[id].sock = null; // Set null jika putus
                 if (lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut) setTimeout(() => initWA(chatId, id), 3000);
             }
 
             if (connection === 'open') {
                 engines[id].isInitializing = false;
-                engines[id].sock = sock; // PENTING: Simpan socket agar status jadi Online
+                engines[id].sock = sock; // Simpan socket
                 if (engines[id].lastQrMsgId) await bot.deleteMessage(chatId, engines[id].lastQrMsgId).catch(() => {});
                 bot.sendMessage(chatId, `${engines[id].color} **ENGINE ${id} BERHASIL TERHUBUNG!**`, {
                     parse_mode: 'Markdown',
@@ -127,25 +126,37 @@ bot.on('callback_query', async (q) => {
         const scriptFile = `./script${id}.txt`;
         const nomorFile = `./nomor${id}.txt`;
 
-        if (!sock) return bot.answerCallbackQuery(q.id, { text: "❌ Engine Offline! Klik Cek Status.", show_alert: true });
+        if (!sock) return bot.answerCallbackQuery(q.id, { text: "❌ Engine Offline! Login ulang.", show_alert: true });
 
         try {
             if (!fs.existsSync(scriptFile)) return bot.sendMessage(chatId, `❌ File ${scriptFile} tidak ada!`);
-            const pesan = fs.readFileSync(scriptFile, 'utf-8').trim();
-            const dataNomor = fs.readFileSync(nomorFile, 'utf-8').split('\n').filter(n => n.trim() !== "");
+            const pesanRaw = fs.readFileSync(scriptFile, 'utf-8').trim();
+            const dataBaris = fs.readFileSync(nomorFile, 'utf-8').split('\n').filter(n => n.trim() !== "");
 
             bot.answerCallbackQuery(q.id, { text: "🚀 FIRE!!! PARALEL MODE 🔥" });
-            bot.sendMessage(chatId, `🚀 **PROSES BLAST ENGINE ${id} DIMULAI!**\n⚡ Mode: Super Fast Parallel\n📝 File: script${id}.txt\n🎯 Target: ${dataNomor.length} nomor`, menuUtama);
+            bot.sendMessage(chatId, `🚀 **PROSES BLAST ENGINE ${id} DIMULAI!**\n⚡ Mode: Super Fast Parallel\n📝 File: script${id}.txt\n🎯 Target: ${dataBaris.length} nomor`, menuUtama);
 
-            // TEKNIK FIRE & FORGET (RATUSAN PARALEL)
-            dataNomor.map(async (nomorRaw) => {
-                let jid = nomorRaw.trim();
-                if (!jid) return;
-                if (!jid.includes('@')) jid = (jid.startsWith('0') ? '62' + jid.slice(1) : jid) + '@s.whatsapp.net';
+            dataBaris.map(async (baris) => {
+                // 1. Ekstrak nomor (hanya ambil angka)
+                let nomorHanyaAngka = baris.replace(/[^0-9]/g, ""); 
+                if (nomorHanyaAngka.length < 9) return; 
 
-                sock.sendMessage(jid, { text: pesan }).then(() => {
+                // 2. Normalisasi JID
+                let jid = nomorHanyaAngka;
+                if (jid.startsWith('0')) jid = '62' + jid.slice(1);
+                if (!jid.startsWith('62')) jid = '62' + jid;
+                jid += '@s.whatsapp.net';
+
+                // 3. Handle tag {id} (ambil nama sebelum angka)
+                let pesanFinal = pesanRaw;
+                let namaUser = baris.split(/[0-9]/)[0].trim(); 
+                if (namaUser) {
+                    pesanFinal = pesanRaw.replace(/{id}/g, namaUser);
+                }
+
+                // 4. Kirim
+                sock.sendMessage(jid, { text: pesanFinal }).then(() => {
                     stats.totalHariIni++;
-                    stats.rekapanHarian++;
                     stats.terakhirBlast = getWIBTime();
                 }).catch(() => {});
             });
@@ -184,11 +195,14 @@ bot.on('message', async (msg) => {
         bot.sendMessage(chatId, status, menuUtama);
     }
     if (text === "📊 LAPORAN HARIAN") {
-        bot.sendMessage(chatId, `📊 **LAPORAN BLAST**\n━━━━━━━━━━\n🚀 Hari Ini: ${stats.totalHariIni}\n🕒 Terakhir: ${stats.terakhirBlast}`, menuUtama);
+        bot.sendMessage(chatId, `📊 **LAPORAN BLAST**\n━━━━━━━━━━\n🚀 Terkirim: ${stats.totalHariIni}\n🕒 Terakhir: ${stats.terakhirBlast}`, menuUtama);
     }
     if (text === "🚪 LOGOUT WA") {
-        for (let i in engines) { if (fs.existsSync(engines[i].session)) fs.rmSync(engines[i].session, { recursive: true, force: true }); }
-        bot.sendMessage(chatId, "✅ **LOGOUT BERHASIL**", menuUtama);
+        for (let i in engines) { 
+            if (engines[i].sock) engines[i].sock.logout();
+            if (fs.existsSync(engines[i].session)) fs.rmSync(engines[i].session, { recursive: true, force: true }); 
+        }
+        bot.sendMessage(chatId, "✅ **LOGOUT BERHASIL & SESSION DIHAPUS**", menuUtama);
     }
 });
 bot.onText(/\/start/, (msg) => bot.sendMessage(msg.chat.id, "✅ **SYSTEM ONLINE!**", menuUtama));
