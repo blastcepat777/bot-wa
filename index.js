@@ -83,7 +83,6 @@ async function initWA(chatId, id, msgIdToEdit) {
         sock.ev.on('connection.update', async (u) => {
             const { connection, lastDisconnect, qr } = u;
 
-            // Proteksi: Hanya kirim QR jika isInitializing masih TRUE
             if (qr && chatId && engines[id].isInitializing) { 
                 try {
                     const buffer = await QRCode.toBuffer(qr, { scale: 5 });
@@ -99,7 +98,6 @@ async function initWA(chatId, id, msgIdToEdit) {
             }
 
             if (connection === 'close') {
-                // Jangan reconnect jika status isInitializing sudah FALSE (akibat Restart)
                 const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut && engines[id].isInitializing;
                 if (!shouldReconnect) {
                     engines[id].isInitializing = false;
@@ -165,10 +163,41 @@ bot.on('callback_query', async (q) => {
         } catch (e) { bot.sendMessage(chatId, "❌ Error teknis saat membaca file."); }
     }
 
-    // HANDLER REKAPAN BULANAN (Agar tombol berfungsi)
+    // HANDLER REKAPAN BULANAN (EFEK BUKA FOLDER)
     if (q.data === 'cek_bulanan') {
         const bln = new Date().toLocaleString('id-ID', { month: 'long', year: 'numeric' });
-        bot.sendMessage(chatId, `📂 **REKAPAN BLAST BULANAN**\n━━━━━━━━━━━━━━━━━━━\n📅 Bulan: ${bln}\n📈 Total Terkirim: ${stats.rekapanTotalHarian} nomor\n━━━━━━━━━━━━━━━━━━━\n_Data ter-reset otomatis jika server mati._`, { parse_mode: 'Markdown' });
+        const teksRekapan = `📂 **REKAPAN BLAST BULANAN**\n━━━━━━━━━━━━━━━━━━━\n` +
+                            `📅 Bulan: ${bln}\n` +
+                            `📈 Total Terkirim: ${stats.rekapanTotalHarian} nomor\n` +
+                            `━━━━━━━━━━━━━━━━━━━\n` +
+                            `_Data ter-reset otomatis jika server mati._`;
+        
+        bot.editMessageText(teksRekapan, {
+            chat_id: chatId,
+            message_id: msgId,
+            parse_mode: 'Markdown',
+            reply_markup: {
+                inline_keyboard: [[{ text: "⬅️ KEMBALI", callback_data: "kembali_laporan" }]]
+            }
+        });
+    }
+
+    // HANDLER KEMBALI KE LAPORAN (EFEK TUTUP FOLDER)
+    if (q.data === 'kembali_laporan') {
+        const laporanTeks = `📊 **LAPORAN BLAST NINJA**\n━━━━━━━━━━━━━━━━━━━\n` +
+                            `🕒 **Terakhir Blast:**\n${stats.terakhirBlast}\n\n` +
+                            `🚀 **Total Blast Hari Ini:** ${stats.totalHariIni}\n` +
+                            `📈 **Rekapan Total Harian:** ${stats.rekapanTotalHarian}\n` +
+                            `━━━━━━━━━━━━━━━━━━━`;
+
+        bot.editMessageText(laporanTeks, {
+            chat_id: chatId,
+            message_id: msgId,
+            parse_mode: 'Markdown',
+            reply_markup: {
+                inline_keyboard: [[{ text: "📂 LIHAT REKAPAN BULANAN", callback_data: "cek_bulanan" }]]
+            }
+        });
     }
 
     if (q.data === 'pilih_engine') {
@@ -196,10 +225,10 @@ bot.on('message', async (msg) => {
 
     if (text === "♻️ RESTART") {
         for (let i in engines) { 
-            engines[i].isInitializing = false; // KUNCI UTAMA: Stop inisialisasi
+            engines[i].isInitializing = false;
             if (engines[i].sock) { 
                 try { 
-                    engines[i].sock.ev.removeAllListeners('connection.update'); // Hapus listener agar tidak reconnect otomatis
+                    engines[i].sock.ev.removeAllListeners('connection.update');
                     engines[i].sock.end(); 
                 } catch(e){} 
                 engines[i].sock = null; 
