@@ -10,7 +10,7 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 process.on('uncaughtException', (err) => console.log('Error: ', err.message));
 process.on('unhandledRejection', (reason) => console.log('Rejection: ', reason));
 
-// --- SISTEM STATISTIK DENGAN WAKTU WIB ---
+// --- SISTEM STATISTIK REAL-TIME WIB ---
 let stats = { 
     totalBlast: 0, 
     dailyBlast: 0, 
@@ -18,7 +18,7 @@ let stats = {
     lastDate: new Date().toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta' }) 
 };
 
-// Fungsi cek ganti hari untuk reset harian
+// Fungsi cek ganti hari untuk reset harian otomatis
 const checkDateReset = () => {
     const currentDate = new Date().toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta' });
     if (stats.lastDate !== currentDate) {
@@ -28,7 +28,12 @@ const checkDateReset = () => {
 };
 
 const getWIBTime = () => {
-    return new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit' }) + " WIB";
+    return new Date().toLocaleTimeString('id-ID', { 
+        timeZone: 'Asia/Jakarta', 
+        hour: '2-digit', 
+        minute: '2-digit',
+        second: '2-digit' 
+    }) + " WIB";
 };
 
 let engines = {
@@ -36,16 +41,14 @@ let engines = {
     2: { sock: null, lastQrMsgId: null, session: './session_2', file: 'nomor2.txt', color: '🌊', menuSent: false, isInitializing: false }
 };
 
-// --- KEYBOARD PERMANEN BAWAH (MENYAMPING SEMUA 1 BARIS) ---
+// --- KEYBOARD PERMANEN BAWAH (URUTAN SESUAI PERMINTAAN) ---
 const menuBawah = {
     reply_markup: {
         keyboard: [
-            [
-                { text: "📊 LAPORAN" }, 
-                { text: "♻️ RESTART" }, 
-                { text: "🛡️ STATUS" }, 
-                { text: "🚪 LOGOUT WA" }
-            ]
+            [{ text: "♻️ RESTART" }],           // 1. Restart paling atas
+            [{ text: "📊 LAPORAN HARIAN" }],    // 2. Laporan Harian di bawahnya
+            [{ text: "🛡️ CEK STATUS WA" }],     // 3. Status WA
+            [{ text: "🚪 LOGOUT WA" }]          // 4. Logout paling bawah
         ],
         resize_keyboard: true,
         one_time_keyboard: false
@@ -81,7 +84,7 @@ async function forceLogout(chatId, id) {
     }
     engines[id].menuSent = false;
     engines[id].isInitializing = false;
-    bot.sendMessage(chatId, `✅ **ENGINE ${id} TELAH LOGOUT & SESI DIHAPUS**`, menuBawah);
+    bot.sendMessage(chatId, `✅ **ENGINE ${id} TELAH LOGOUT**`, menuBawah);
 }
 
 async function initWA(chatId, id) {
@@ -110,17 +113,8 @@ async function initWA(chatId, id) {
         if (qr && chatId) {
             try {
                 const buffer = await QRCode.toBuffer(qr, { scale: 4 }); 
-                const otherId = id == 1 ? 2 : 1;
-                const markup = {
-                    inline_keyboard: [
-                        [
-                            { text: `(ON)${engines[otherId].color} QR${otherId}`, callback_data: `login_${otherId}` },
-                            { text: "❌ CANCEL", callback_data: 'batal' }
-                        ]
-                    ]
-                };
-                const caption = `${engines[id].color} **SCAN QR ENGINE ${id} SEKARANG !!**\n\n🕒 Update: ${getWIBTime()}`;
-                const sent = await bot.sendPhoto(chatId, buffer, { caption, parse_mode: 'Markdown', reply_markup: markup });
+                const caption = `${engines[id].color} **SCAN QR ENGINE ${id}**\n\n🕒 Update: ${getWIBTime()}`;
+                const sent = await bot.sendPhoto(chatId, buffer, { caption, parse_mode: 'Markdown' });
                 if (engines[id].lastQrMsgId) await bot.deleteMessage(chatId, engines[id].lastQrMsgId).catch(() => {});
                 engines[id].lastQrMsgId = sent.message_id;
             } catch (e) { console.log("QR Error"); }
@@ -151,7 +145,7 @@ bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text;
 
-    if (text === "📊 LAPORAN") {
+    if (text === "📊 LAPORAN HARIAN") {
         checkDateReset();
         const laporan = `📊 **LAPORAN PRODUKSI**\n` +
                         `--------------------------\n` +
@@ -163,7 +157,7 @@ bot.on('message', async (msg) => {
         bot.sendMessage(chatId, laporan, menuBawah);
     }
 
-    if (text === "🛡️ STATUS") {
+    if (text === "🛡️ CEK STATUS WA") {
         let status = "🛡️ **STATUS ENGINE**\n\n";
         for (let i = 1; i <= 2; i++) {
             status += `${engines[i].color} Engine ${i}: ${engines[i].sock?.user ? "✅ ONLINE" : "❌ OFFLINE"}\n`;
@@ -195,8 +189,6 @@ bot.on('callback_query', async (q) => {
 
     if (data.startsWith('login_')) {
         const id = data.split('_')[1];
-        if (engines[id].isInitializing) return bot.answerCallbackQuery(q.id, { text: "Sabar Bos..." });
-        bot.sendMessage(chatId, `⏳ **Menyiapkan QR Engine ${id}...**`).then(m => engines[id].lastQrMsgId = m.message_id);
         initWA(chatId, id);
     }
 
