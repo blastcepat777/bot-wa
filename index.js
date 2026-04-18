@@ -16,8 +16,7 @@ const getWIBTime = () => {
     return new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta", dateStyle: 'medium', timeStyle: 'medium' }) + " WIB";
 };
 
-// --- KONFIGURASI KEYBOARD PERMANEN ---
-// Kita definisikan markup ini agar bisa dipanggil berulang kali dengan konsisten
+// --- KEYBOARD PERMANEN (WAJIB ADA) ---
 const menuUtama = {
     reply_markup: {
         keyboard: [
@@ -115,12 +114,10 @@ async function initWA(chatId, id, msgIdToEdit) {
 
 // --- HANDLERS ---
 
-// Fungsi Restart (FIXED: Keyboard Menu Bawah & Tombol Login muncul bareng)
+// Fungsi Restart (SOLUSI FINAL: 2 Pesan Cepat agar Keyboard Typing muncul)
 const handleRestartLogika = async (chatId) => {
-    // Kirim indikator awal agar user tahu proses berjalan
     const rebootMsg = await bot.sendMessage(chatId, "♻️ **SYSTEM REBOOTING...**", menuUtama);
     
-    // Matikan engine
     for (let i in engines) { 
         if (engines[i].sock) { 
             try { engines[i].sock.end(); } catch (e) {}
@@ -130,23 +127,21 @@ const handleRestartLogika = async (chatId) => {
     }
     
     setTimeout(async () => {
-        // Hapus pesan "Rebooting"
         await bot.deleteMessage(chatId, rebootMsg.message_id).catch(() => {});
         
-        // Kirim pesan sukses dengan TOMBOL LOGIN dan MENU BAWAH sekaligus
-        bot.sendMessage(chatId, "♻️ **SYSTEM BERHASIL RESTART**\nSilahkan klik tombol di bawah untuk login:", {
+        // 1. Kirim pesan pertama untuk memastikan Keyboard Bawah muncul
+        await bot.sendMessage(chatId, "♻️ **SYSTEM BERHASIL RESTART**", menuUtama);
+        
+        // 2. Kirim pesan kedua berisi tombol LOGIN
+        bot.sendMessage(chatId, "Silahkan klik tombol di bawah untuk login:", {
             parse_mode: 'Markdown',
             reply_markup: { 
-                inline_keyboard: [[{ text: "🚀 LOGIN", callback_data: "pilih_engine" }]],
-                keyboard: menuUtama.reply_markup.keyboard,
-                resize_keyboard: true,
-                one_time_keyboard: false
+                inline_keyboard: [[{ text: "🚀 LOGIN", callback_data: "pilih_engine" }]]
             }
         });
     }, 2000);
 };
 
-// Handler Command & Text
 bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text;
@@ -166,7 +161,6 @@ bot.on('message', async (msg) => {
     }
 });
 
-// Handler Callback Tombol
 bot.on('callback_query', async (q) => {
     const chatId = q.message.chat.id;
     const msgId = q.message.message_id;
@@ -201,7 +195,5 @@ bot.on('callback_query', async (q) => {
     bot.answerCallbackQuery(q.id);
 });
 
-// Anti-Crash
 process.on('uncaughtException', (err) => { console.error('Error:', err); });
-
 bot.onText(/\/start/, (msg) => sendPesanOnline(msg.chat.id));
