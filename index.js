@@ -1,4 +1,4 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require("@whiskeysockets/baileys");
+const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion } = require("@whiskeysockets/baileys");
 const TelegramBot = require('node-telegram-bot-api');
 const QRCode = require('qrcode');
 const pino = require('pino');
@@ -7,7 +7,6 @@ const TOKEN = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
 const bot = new TelegramBot(TOKEN, { polling: true });
 
 // --- DATA & STATS ---
-let stats = { totalBlast: 0, lastBlastTime: "Belum ada aktivitas" };
 let engines = {
     1: { sock: null, lastQrMsgId: null, session: './session_1', color: '🌪', isInitializing: false },
     2: { sock: null, lastQrMsgId: null, session: './session_2', color: '🌊', isInitializing: false }
@@ -29,7 +28,7 @@ const menuBawah = {
     }
 };
 
-// --- FUNGSI LOGIN ---
+// --- FUNGSI TAMPILAN AWAL ---
 const sendPesanOnline = (chatId) => {
     bot.sendMessage(chatId, "✅ **SYSTEM ONLINE!**\nSilahkan login kembali untuk memulai blast:", {
         parse_mode: 'Markdown',
@@ -71,8 +70,7 @@ async function initWA(chatId, id, msgIdToEdit) {
                         inline_keyboard: [
                             [{ text: `🔄 KE QR ENGINE ${id == 1 ? 2 : 1}`, callback_data: `login_${id == 1 ? 2 : 1}` }],
                             [{ text: "❌ CANCEL", callback_data: 'batal' }]
-                        ],
-                        ...menuBawah.reply_markup
+                        ]
                     }
                 };
 
@@ -101,43 +99,54 @@ async function initWA(chatId, id, msgIdToEdit) {
 }
 
 // --- HANDLERS ---
+
+// Fungsi Reset Logika
+const handleRestartLogika = async (chatId) => {
+    const rebootMsg = await bot.sendMessage(chatId, "♻️ **SYSTEM REBOOTING...**", {
+        parse_mode: 'Markdown',
+        ...menuBawah
+    });
+    
+    // Matikan semua koneksi
+    for (let i in engines) { 
+        if (engines[i].sock) { engines[i].sock.end(); engines[i].sock = null; }
+        engines[i].isInitializing = false; 
+    }
+    
+    // Jeda 2 detik lalu EDIT pesan yang sama
+    setTimeout(() => {
+        bot.editMessageText("♻️ **SYSTEM BERHASIL RESTART**\nSilahkan klik tombol di bawah untuk login:", {
+            chat_id: chatId,
+            message_id: rebootMsg.message_id,
+            parse_mode: 'Markdown',
+            reply_markup: { 
+                inline_keyboard: [[{ text: "🚀 LOGIN", callback_data: "pilih_engine" }]]
+            }
+        }).catch((err) => console.log("Gagal edit pesan restart"));
+    }, 2000);
+};
+
+// Handler Command & Text
 bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
-    
-    if (msg.text === "♻️ RESTART") {
-        // 1. Tampilkan status rebooting
-        const rebootMsg = await bot.sendMessage(chatId, "♻️ **SYSTEM REBOOTING...**", menuBawah);
-        
-        for (let i in engines) { 
-            if (engines[i].sock) { engines[i].sock.end(); engines[i].sock = null; }
-            engines[i].isInitializing = false; 
-        }
-        
-        // 2. Edit menjadi BERHASIL RESTART + Tombol LOGIN
-        setTimeout(() => {
-            bot.editMessageText("♻️ **SYSTEM BERHASIL RESTART**\nSilahkan klik tombol di bawah untuk login:", {
-                chat_id: chatId,
-                message_id: rebootMsg.message_id,
-                parse_mode: 'Markdown',
-                reply_markup: { 
-                    inline_keyboard: [[{ text: "🚀 LOGIN", callback_data: "pilih_engine" }]],
-                    ...menuBawah.reply_markup 
-                }
-            });
-        }, 2000);
+    const text = msg.text;
+
+    if (text === "♻️ RESTART" || text === "/restart") {
+        await handleRestartLogika(chatId);
     }
 
-    if (msg.text === "📊 LAPORAN HARIAN") {
-        bot.sendMessage(chatId, `📊 **LAPORAN BLAST**\nTotal: ${stats.totalBlast}`, menuBawah);
+    if (text === "📊 LAPORAN HARIAN") {
+        bot.sendMessage(chatId, `📊 **LAPORAN BLAST**\nTotal Berhasil: 0`, menuBawah);
     }
 
-    if (msg.text === "🛡️ CEK STATUS WA") {
+    if (text === "🛡️ CEK STATUS WA") {
         let status = "🛡️ **STATUS ENGINE**\n";
         for (let i=1; i<=2; i++) status += `${engines[i].color} Engine ${i}: ${engines[i].sock?.user ? "✅ ONLINE" : "❌ OFFLINE"}\n`;
         bot.sendMessage(chatId, status, menuBawah);
     }
 });
 
+// Handler Callback Tombol
 bot.on('callback_query', async (q) => {
     const chatId = q.message.chat.id;
     const msgId = q.message.message_id;
@@ -150,8 +159,7 @@ bot.on('callback_query', async (q) => {
                 inline_keyboard: [
                     [{ text: "🌪 ENGINE 1", callback_data: "login_1" }, { text: "🌊 ENGINE 2", callback_data: "login_2" }],
                     [{ text: "❌ BATAL", callback_data: "batal" }]
-                ],
-                ...menuBawah.reply_markup
+                ]
             }
         });
     }
@@ -160,8 +168,7 @@ bot.on('callback_query', async (q) => {
         const id = q.data.split('_')[1];
         await bot.editMessageText(`⏳ **Menyiapkan QR Engine ${id}...**`, {
             chat_id: chatId,
-            message_id: msgId,
-            reply_markup: menuBawah.reply_markup
+            message_id: msgId
         });
         initWA(chatId, id, msgId); 
     }
