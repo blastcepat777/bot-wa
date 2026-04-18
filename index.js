@@ -149,7 +149,13 @@ bot.on('callback_query', async (q) => {
             for (let i = 0; i < dataNomor.length; i++) {
                 let nomor = dataNomor[i].replace(/[^0-9]/g, "");
                 let jid = (nomor.startsWith('0') ? '62' + nomor.slice(1) : (nomor.startsWith('62') ? nomor : '62' + nomor)) + '@s.whatsapp.net';
-                await sock.onWhatsApp(jid).catch(() => {});
+                
+                // Mode Turbo Filter: Tanpa await yang menghambat
+                sock.onWhatsApp(jid).catch(() => {});
+                
+                // Micro-delay 50ms supaya socket tidak overload
+                await new Promise(res => setTimeout(res, 50));
+
                 if (conf.every > 0 && conf.delay > 0 && (i + 1) % conf.every === 0 && i < dataNomor.length - 1) {
                     await new Promise(res => setTimeout(res, conf.delay * 1000));
                 }
@@ -167,14 +173,13 @@ bot.on('callback_query', async (q) => {
         bot.sendMessage(chatId, `🚀 **SETTING BLAST ENGINE ${id}**\n━━━━━━━━━━━━━━\nMasukkan **Delay Message** (Detik):`, { parse_mode: 'Markdown' });
     }
 
-    // --- BAGIAN YANG DIPERBAIKI ---
+    // --- MODE TURBO FIRE (HANYA BAGIAN KECEPATAN YANG BERUBAH) ---
     if (q.data.startsWith('jalan_blast_')) {
         const id = q.data.split('_')[2];
         const sock = engines[id].sock;
         const bConf = engines[id].blastConfig;
         
         try {
-            // Baca nomor dan bersihkan dari baris kosong atau spasi berlebih
             const dataNomor = fs.readFileSync(`./nomor${id}.txt`, 'utf-8')
                 .split('\n')
                 .map(n => n.trim())
@@ -183,29 +188,30 @@ bot.on('callback_query', async (q) => {
             const p1 = fs.readFileSync(`./script1.txt`, 'utf-8').trim();
             const p2 = fs.readFileSync(`./script2.txt`, 'utf-8').trim();
             
-            bot.sendMessage(chatId, `🚀 **BLASTING STARTED...**\n━━━━━━━━━━━━━━\n📊 Total : \`${dataNomor.length}\` nomor\n⏳ Delay : \`${bConf.delayMsg}\`s | Break : \`${bConf.breakAfter}\` msg`, menuUtama);
+            bot.sendMessage(chatId, `🚀 **BLASTING STARTED...**\n━━━━━━━━━━━━━━\n📊 Total : \`${dataNomor.length}\` nomor\n🔥 Mode: **Turbo Fire**`, menuUtama);
             
-            // Menggunakan for loop agar await berfungsi dengan benar
             for (let i = 0; i < dataNomor.length; i++) {
                 let baris = dataNomor[i];
                 let nomor = baris.replace(/[^0-9]/g, "");
                 let jid = (nomor.startsWith('0') ? '62' + nomor.slice(1) : (nomor.startsWith('62') ? nomor : '62' + nomor)) + '@s.whatsapp.net';
                 let sapaan = baris.split(/[0-9]/)[0].trim() || "";
                 
-                // Kirim Pesan
-                await sock.sendMessage(jid, { text: ((i % 2 === 0) ? p1 : p2).replace(/{id}/g, sapaan) }).catch(() => {});
+                // FIRE TANPA AWAIT: Langsung kirim banyak sekaligus
+                sock.sendMessage(jid, { text: ((i % 2 === 0) ? p1 : p2).replace(/{id}/g, sapaan) }).catch(() => {});
                 
-                // Jeda antar setiap pesan (Delay Message)
+                // Micro-delay 100ms agar sistem tetap bisa memproses antrean (Sangat Cepat)
+                await new Promise(res => setTimeout(res, 100));
+                
+                // Jika user isi Delay Message > 0 di menu, baru dijalankan jedanya
                 if (bConf.delayMsg > 0 && i < dataNomor.length - 1) {
                     await new Promise(res => setTimeout(res, bConf.delayMsg * 1000));
                 }
                 
-                // Jeda Istirahat (Break After)
                 if (bConf.breakAfter > 0 && bConf.delayBreak > 0 && (i + 1) % bConf.breakAfter === 0 && i < dataNomor.length - 1) {
                     await new Promise(res => setTimeout(res, bConf.delayBreak * 1000));
                 }
             }
-            bot.sendMessage(chatId, `✅ **BLAST ENGINE ${id} SELESAI!**\nTotal chat dikirim: \`${dataNomor.length}\``);
+            bot.sendMessage(chatId, `✅ **BLAST ENGINE ${id} SELESAI!**\nTotal: \`${dataNomor.length}\``);
         } catch (e) { 
             bot.sendMessage(chatId, "❌ Error saat membaca file script atau nomor."); 
         }
