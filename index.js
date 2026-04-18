@@ -51,7 +51,6 @@ async function startFilter(chatId, id) {
 
     bot.sendMessage(chatId, `🔍 **MEMULAI FILTER ENGINE ${id}...**\n📂 File: nomor${id}.txt\n🔢 Total: ${dataNomor.length} nomor`, menuUtama);
     
-    // --- LOGIKA SETELAH SELESAI FILTER ---
     setTimeout(() => {
         const infoSelesai = `✅ **FILTER SELESAI ENGINE ${id}**\n━━━━━━━━━━━━━━━━━━━\n📂 File: nomor${id}.txt\n🔢 Terdeteksi: ${dataNomor.length} Nomor\n━━━━━━━━━━━━━━━━━━━\nKlik tombol di bawah untuk memulai blast:`;
         
@@ -64,7 +63,7 @@ async function startFilter(chatId, id) {
                 ]
             }
         });
-    }, 2000); // Simulasi delay proses filter
+    }, 2000);
 }
 
 // --- CORE FUNCTIONS ---
@@ -160,28 +159,21 @@ const handleLogout = async (chatId) => {
     
     for (let i in engines) {
         if (engines[i].sock) {
-            try {
-                await engines[i].sock.logout();
-                engines[i].sock.end();
-            } catch (e) {}
+            try { await engines[i].sock.logout(); engines[i].sock.end(); } catch (e) {}
             engines[i].sock = null;
         }
         
         if (fs.existsSync(engines[i].session)) {
-            try {
-                fs.rmSync(engines[i].session, { recursive: true, force: true });
-            } catch (e) { console.log("Gagal hapus folder sesi"); }
+            try { fs.rmSync(engines[i].session, { recursive: true, force: true }); } catch (e) {}
         }
         engines[i].isInitializing = false;
     }
 
-    bot.editMessageText("✅ **LOGOUT TOTAL BERHASIL**\nSilahkan klik login untuk scan ulang.", {
+    bot.editMessageText("✅ **LOGOUT TOTAL BERHASIL**", {
         chat_id: chatId,
         message_id: msg.message_id,
         parse_mode: 'Markdown',
-        reply_markup: {
-            inline_keyboard: [[{ text: "🚀 LOGIN ULANG", callback_data: "pilih_engine" }]]
-        }
+        reply_markup: { inline_keyboard: [[{ text: "🚀 LOGIN ULANG", callback_data: "pilih_engine" }]] }
     });
 };
 
@@ -250,12 +242,45 @@ bot.on('callback_query', async (q) => {
         await startFilter(chatId, id);
     }
 
-    // --- HANDLER BARU: JALAN BLAST ---
+    // --- HANDLER BLAST: KECEPATAN FIRE PARALEL ---
     if (q.data.startsWith('jalan_blast_')) {
         const id = q.data.split('_')[2];
-        bot.answerCallbackQuery(q.id, { text: `Memulai Blast Engine ${id}!` });
-        bot.sendMessage(chatId, `🚀 **PROSES BLAST ENGINE ${id} DIMULAI!**`, menuUtama);
-        // Logika blast Anda bisa dipanggil di sini
+        const sock = engines[id].sock;
+        const scriptPath = `./script${id}.txt`;
+        const nomorPath = `./nomor${id}.txt`;
+
+        if (!sock) return bot.answerCallbackQuery(q.id, { text: "❌ Engine Offline!", show_alert: true });
+
+        bot.answerCallbackQuery(q.id, { text: "🚀 FIRE!!! MELEDAK 🔥" });
+        bot.sendMessage(chatId, `🚀 **PROSES BLAST ENGINE ${id} DIMULAI!**\n⚡ Mode: Super Fast Parallel`, menuUtama);
+
+        try {
+            const pesan = fs.readFileSync(scriptPath, 'utf-8').trim();
+            const dataNomor = fs.readFileSync(nomorPath, 'utf-8').split('\n').filter(n => n.trim() !== "");
+
+            // FIRE LOGIC: Ratusan pesan paralel tanpa delay
+            await Promise.all(dataNomor.map(async (nomorRaw) => {
+                let jid = nomorRaw.trim();
+                if (!jid) return;
+
+                // Normalisasi JID Kilat
+                if (!jid.includes('@')) {
+                    jid = jid.startsWith('0') ? '62' + jid.slice(1) : (jid.startsWith('62') ? jid : '62' + jid);
+                    jid += '@s.whatsapp.net';
+                }
+
+                // Kirim Tanpa Await di sendMessage untuk kecepatan maksimal
+                return sock.sendMessage(jid, { text: pesan }).then(() => {
+                    stats.totalHariIni++;
+                    stats.rekapanHarian++;
+                    stats.terakhirBlast = getWIBTime();
+                }).catch(() => {});
+            }));
+            
+            bot.sendMessage(chatId, `✅ **BLAST ENGINE ${id} SELESAI!**\nTotal: ${dataNomor.length} Nomor.`);
+        } catch (e) {
+            bot.sendMessage(chatId, "❌ Gagal membaca file script/nomor.");
+        }
     }
 
     if (q.data === 'view_bulanan') {
@@ -276,7 +301,6 @@ bot.on('callback_query', async (q) => {
         await bot.deleteMessage(chatId, msgId).catch(() => {});
         bot.sendMessage(chatId, "✅ **SYSTEM ONLINE!**", menuUtama);
     }
-
     bot.answerCallbackQuery(q.id);
 });
 
