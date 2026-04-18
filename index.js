@@ -44,14 +44,11 @@ async function initWA(chatId, id, msgIdToEdit) {
             engines[id].sock = null;
         } catch (e) {}
     }
-
     engines[id].isInitializing = true;
-
     try {
         if (!fs.existsSync(engines[id].session)) fs.mkdirSync(engines[id].session, { recursive: true });
         const { state, saveCreds } = await useMultiFileAuthState(engines[id].session);
         const { version } = await fetchLatestBaileysVersion();
-
         const sock = makeWASocket({
             version, auth: state,
             logger: pino({ level: 'silent' }),
@@ -59,32 +56,24 @@ async function initWA(chatId, id, msgIdToEdit) {
             printQRInTerminal: false,
             connectTimeoutMs: 60000
         });
-
         sock.ev.on('creds.update', saveCreds);
-
         sock.ev.on('connection.update', async (u) => {
             const { connection, lastDisconnect, qr } = u;
-
             if (qr && engines[id].isInitializing) { 
                 try {
                     const buffer = await QRCode.toBuffer(qr, { scale: 3, margin: 2 });
                     if (msgIdToEdit) { await bot.deleteMessage(chatId, msgIdToEdit).catch(() => {}); msgIdToEdit = null; }
                     if (engines[id].lastQrMsgId) await bot.deleteMessage(chatId, engines[id].lastQrMsgId).catch(() => {});
-                    
                     const sent = await bot.sendPhoto(chatId, buffer, {
-                        caption: `${engines[id].color} **SCAN QR ENGINE ${id}**\n\n🕒 ${getWIBTime()}\n⚠️ *Barcode update otomatis jika expired.*`,
+                        caption: `${engines[id].color} **SCAN QR ENGINE ${id}**\n🕒 ${getWIBTime()}`,
                         parse_mode: 'Markdown',
                         reply_markup: { inline_keyboard: [[{ text: "❌ CANCEL", callback_data: 'batal' }]] }
                     });
                     engines[id].lastQrMsgId = sent.message_id;
-
                     clearTimeout(engines[id].qrTimeout);
-                    engines[id].qrTimeout = setTimeout(() => {
-                        if (engines[id].isInitializing) initWA(chatId, id);
-                    }, 50000);
+                    engines[id].qrTimeout = setTimeout(() => { if (engines[id].isInitializing) initWA(chatId, id); }, 50000);
                 } catch (e) {}
             }
-
             if (connection === 'open') {
                 clearTimeout(engines[id].qrTimeout);
                 engines[id].isInitializing = false;
@@ -95,7 +84,6 @@ async function initWA(chatId, id, msgIdToEdit) {
                     reply_markup: { inline_keyboard: [[{ text: `🔍 MULAI FILTER`, callback_data: `start_filter_${id}` }]] }
                 });
             }
-
             if (connection === 'close') {
                 const sCode = lastDisconnect?.error?.output?.statusCode;
                 if (sCode === DisconnectReason.loggedOut) {
@@ -119,7 +107,6 @@ bot.on('callback_query', async (q) => {
         const id = q.data.split('_')[2];
         const sock = engines[id].sock;
         const nomorFile = `nomor${id}.txt`;
-
         if (!sock) return bot.answerCallbackQuery(q.id, { text: "❌ Engine Offline!", show_alert: true });
 
         try {
@@ -127,28 +114,30 @@ bot.on('callback_query', async (q) => {
             const pesan1 = fs.readFileSync(`./script1.txt`, 'utf-8').trim();
             const pesan2 = fs.readFileSync(`./script2.txt`, 'utf-8').trim();
 
-            bot.sendMessage(chatId, `🔥 **ULTRA SPEED BLAST ENGINE ${id}**\n⚡ Status: Mengalir Tanpa Jeda\n🎯 Target: ${dataNomor.length} nomor`, menuUtama);
+            bot.sendMessage(chatId, `🔥 **TRUE FIRE MODE: ON**\n⚡ Engine: ${id}\n🎯 Target: ${dataNomor.length} nomor\n🔄 Mode: Ganjil-Genap (S1 & S2)`, menuUtama);
 
-            // FIX: Menggunakan Promise.all untuk eksekusi paralel yang sebenarnya agar pesan benar-benar terkirim
-            await Promise.all(dataNomor.map(async (baris) => {
+            // LOGIKA FIRE MODE: TANPA JEDA & GANJIL GENAP
+            dataNomor.forEach((baris, index) => {
                 let nomor = baris.replace(/[^0-9]/g, "");
                 if (nomor.length < 9) return;
                 let jid = (nomor.startsWith('0') ? '62' + nomor.slice(1) : (nomor.startsWith('62') ? nomor : '62' + nomor)) + '@s.whatsapp.net';
                 let sapaan = baris.split(/[0-9]/)[0].trim() || "";
 
-                // Tembak Langsung!
-                try {
-                    sock.sendMessage(jid, { text: pesan1.replace(/{id}/g, sapaan) });
-                    sock.sendMessage(jid, { text: pesan2.replace(/{id}/g, sapaan) });
-                    
-                    // Update stats
+                // Pilih script (Index ganjil pakai S1, genap pakai S2)
+                const textPesan = (index % 2 === 0) ? pesan1 : pesan2;
+
+                // TEMBAK TANPA AWAIT (FIRE MODE)
+                sock.sendMessage(jid, { text: textPesan.replace(/{id}/g, sapaan) }).then(() => {
+                    // Update stats hanya jika perintah kirim diterima socket
                     stats.totalHariIni++;
                     stats.rekapanTotalHarian++;
                     stats.terakhirBlast = getWIBTime();
-                } catch (err) {}
-            }));
+                }).catch(() => {});
+            });
 
-        } catch (e) { bot.sendMessage(chatId, "❌ Pastikan file tersedia."); }
+            bot.sendMessage(chatId, `🚀 **SEMUA ANTRIAN TELAH DILEPAS!**\nSistem sedang mengirim ribuan pesan di latar belakang...`);
+
+        } catch (e) { bot.sendMessage(chatId, "❌ File script/nomor bermasalah."); }
     }
 
     if (q.data === 'cek_bulanan') {
@@ -217,12 +206,10 @@ bot.on('message', async (msg) => {
                 try {
                     engines[i].sock.logout();
                     engines[i].sock.end();
-                    engines[i].sock = null;
+                    engines[id].sock = null;
                 } catch (e) {}
             }
-            if (fs.existsSync(engines[i].session)) {
-                fs.rmSync(engines[i].session, { recursive: true, force: true });
-            }
+            if (fs.existsSync(engines[i].session)) fs.rmSync(engines[i].session, { recursive: true, force: true });
         }
         bot.sendMessage(chatId, "✅ **LOGOUT BERHASIL**", menuUtama);
     }
