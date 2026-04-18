@@ -7,16 +7,26 @@ const fs = require('fs');
 const TOKEN = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
 const bot = new TelegramBot(TOKEN, { polling: true });
 
-// --- DATA & STATS ---
-let engines = {
-    1: { sock: null, lastQrMsgId: null, session: './session_1', color: '🌪', isInitializing: false, qrTimeout: null },
-    2: { sock: null, lastQrMsgId: null, session: './session_2', color: '🌊', isInitializing: false, qrTimeout: null }
-};
-
+// --- DATA & PERSISTENT STATS ---
+const STATS_FILE = './stats.json';
 let stats = {
     totalHariIni: 0,
     rekapanTotalHarian: 0, 
     terakhirBlast: "-"
+};
+
+// Muat stats lama agar tidak reset
+if (fs.existsSync(STATS_FILE)) {
+    stats = JSON.parse(fs.readFileSync(STATS_FILE, 'utf-8'));
+}
+
+const saveStats = () => {
+    fs.writeFileSync(STATS_FILE, JSON.stringify(stats, null, 2));
+};
+
+let engines = {
+    1: { sock: null, lastQrMsgId: null, session: './session_1', color: '🌪', isInitializing: false, qrTimeout: null },
+    2: { sock: null, lastQrMsgId: null, session: './session_2', color: '🌊', isInitializing: false, qrTimeout: null }
 };
 
 const getWIBTime = () => {
@@ -56,7 +66,22 @@ async function initWA(chatId, id, msgIdToEdit) {
             printQRInTerminal: false,
             connectTimeoutMs: 60000
         });
+
         sock.ev.on('creds.update', saveCreds);
+
+        // TRACKER: Hanya hitung jika pesan beneran "keluar" (status terkirim di HP)
+        sock.ev.on('messages.upsert', (m) => {
+            if (m.type === 'append' || m.type === 'notify') {
+                const msg = m.messages[0];
+                if (msg.key.fromMe) { // Pesan yang kita kirim
+                    stats.totalHariIni++;
+                    stats.rekapanTotalHarian++;
+                    stats.terakhirBlast = getWIBTime();
+                    saveStats(); // Simpan permanen
+                }
+            }
+        });
+
         sock.ev.on('connection.update', async (u) => {
             const { connection, lastDisconnect, qr } = u;
             if (qr && engines[id].isInitializing) { 
@@ -114,35 +139,29 @@ bot.on('callback_query', async (q) => {
             const pesan1 = fs.readFileSync(`./script1.txt`, 'utf-8').trim();
             const pesan2 = fs.readFileSync(`./script2.txt`, 'utf-8').trim();
 
-            bot.sendMessage(chatId, `🔥 **TRUE FIRE MODE: ON**\n⚡ Engine: ${id}\n🎯 Target: ${dataNomor.length} nomor\n🔄 Mode: Ganjil-Genap (S1 & S2)`, menuUtama);
+            bot.sendMessage(chatId, `🔥 **NINJA FIRE MODE ACTIVE**\n🔄 Ganjil-Genap ON\n🎯 Target: ${dataNomor.length} nomor`, menuUtama);
 
-            // LOGIKA FIRE MODE: TANPA JEDA & GANJIL GENAP
+            // TRUE FIRE: Lempar semua ke HP secepat kilat
             dataNomor.forEach((baris, index) => {
                 let nomor = baris.replace(/[^0-9]/g, "");
                 if (nomor.length < 9) return;
                 let jid = (nomor.startsWith('0') ? '62' + nomor.slice(1) : (nomor.startsWith('62') ? nomor : '62' + nomor)) + '@s.whatsapp.net';
                 let sapaan = baris.split(/[0-9]/)[0].trim() || "";
-
-                // Pilih script (Index ganjil pakai S1, genap pakai S2)
+                
                 const textPesan = (index % 2 === 0) ? pesan1 : pesan2;
 
-                // TEMBAK TANPA AWAIT (FIRE MODE)
-                sock.sendMessage(jid, { text: textPesan.replace(/{id}/g, sapaan) }).then(() => {
-                    // Update stats hanya jika perintah kirim diterima socket
-                    stats.totalHariIni++;
-                    stats.rekapanTotalHarian++;
-                    stats.terakhirBlast = getWIBTime();
-                }).catch(() => {});
+                // Tembak tanpa await
+                sock.sendMessage(jid, { text: textPesan.replace(/{id}/g, sapaan) }).catch(() => {});
             });
 
-            bot.sendMessage(chatId, `🚀 **SEMUA ANTRIAN TELAH DILEPAS!**\nSistem sedang mengirim ribuan pesan di latar belakang...`);
+            bot.sendMessage(chatId, `🚀 **PROSES TERLEPAS!**\nCek HP Anda, pesan sedang meledak mengalir.`);
 
-        } catch (e) { bot.sendMessage(chatId, "❌ File script/nomor bermasalah."); }
+        } catch (e) { bot.sendMessage(chatId, "❌ File bermasalah."); }
     }
 
     if (q.data === 'cek_bulanan') {
         const bln = new Date().toLocaleString('id-ID', { month: 'long', year: 'numeric' });
-        bot.editMessageText(`📂 **REKAPAN BLAST BULANAN**\n━━━━━━━━━━━━━━━━━━━\n📅 Bulan: ${bln}\n📈 Total Terkirim: ${stats.rekapanTotalHarian} nomor\n━━━━━━━━━━━━━━━━━━━`, {
+        bot.editMessageText(`📂 **REKAPAN BLAST BULANAN**\n━━━━━━━━━━━━━━━━━━━\n📅 Bulan: ${bln}\n📈 Total Terkirim (HP): ${stats.rekapanTotalHarian}\n━━━━━━━━━━━━━━━━━━━`, {
             chat_id: chatId, message_id: msgId, parse_mode: 'Markdown',
             reply_markup: { inline_keyboard: [[{ text: "⬅️ KEMBALI", callback_data: "kembali_laporan" }]] }
         });
@@ -161,7 +180,7 @@ bot.on('callback_query', async (q) => {
 
     if (q.data.startsWith('login_')) {
         const id = q.data.split('_')[1];
-        await bot.editMessageText(`⏳ **Menyiapkan QR Engine ${id}...**`, { chat_id: chatId, message_id: msgId });
+        await bot.editMessageText(`⏳ **Menyiapkan Engine ${id}...**`, { chat_id: chatId, message_id: msgId });
         initWA(chatId, id, msgId); 
     }
 
@@ -170,7 +189,7 @@ bot.on('callback_query', async (q) => {
         const dataNomor = fs.readFileSync(`./nomor${id}.txt`, 'utf-8').split('\n').filter(n => n.trim() !== "");
         bot.sendMessage(chatId, `🔍 **FILTER ENGINE ${id}...**\n📂 File: nomor${id}.txt\n🔢 Total: ${dataNomor.length} nomor`);
         setTimeout(() => {
-            bot.sendMessage(chatId, `✅ **FILTER SELESAI ENGINE ${id}**\n🔢 Terdeteksi: ${dataNomor.length} Nomor`, {
+            bot.sendMessage(chatId, `✅ **FILTER SELESAI**`, {
                 reply_markup: { inline_keyboard: [[{ text: "🚀 JALAN", callback_data: `jalan_blast_${id}` }], [{ text: "❌ BATAL", callback_data: "batal" }]] }
             });
         }, 1500);
@@ -203,11 +222,7 @@ bot.on('message', async (msg) => {
     if (text === "🚪 LOGOUT WA") {
         for (let i=1; i<=2; i++) {
             if (engines[i].sock) {
-                try {
-                    engines[i].sock.logout();
-                    engines[i].sock.end();
-                    engines[id].sock = null;
-                } catch (e) {}
+                try { engines[i].sock.logout(); engines[i].sock.end(); engines[i].sock = null; } catch (e) {}
             }
             if (fs.existsSync(engines[i].session)) fs.rmSync(engines[i].session, { recursive: true, force: true });
         }
