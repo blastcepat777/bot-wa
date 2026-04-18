@@ -217,7 +217,12 @@ bot.on('message', async (msg) => {
 
     if (text === "📊 LAPORAN HARIAN") {
         const lap = `📊 **LAPORAN BLAST NINJA**\n━━━━━━━━━━━━━━\n🕒 **Terakhir:** ${stats.terakhirBlast}\n🚀 **Hari Ini:** \`${stats.totalHariIni}\` chat\n📈 **Total Harian:** \`${stats.rekapanTotalHarian}\` chat\n━━━━━━━━━━━━━━`;
-        bot.sendMessage(chatId, lap, { parse_mode: 'Markdown' });
+        bot.sendMessage(chatId, lap, { 
+            parse_mode: 'Markdown',
+            reply_markup: { 
+                inline_keyboard: [[{ text: "📂 LIHAT REKAPAN BULANAN", callback_data: "cek_bulanan" }]] 
+            }
+        });
     }
     if (text === "♻️ RESTART") {
         await cleanupEngine(chatId, 1); await cleanupEngine(chatId, 2);
