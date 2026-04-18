@@ -16,16 +16,16 @@ let engines = {
     2: { sock: null, lastQrMsgId: null, session: './session_2', file: 'nomor2.txt', color: '🌊', menuSent: false, isInitializing: false }
 };
 
-// --- KEYBOARD PERMANEN BAWAH (RESTART DI ATAS, LAINNYA MENYAMPING DI BAWAH) ---
+// --- KEYBOARD PERMANEN BAWAH (RESTART DI ATAS, LAINNYA MENYAMPING) ---
 const menuBawah = {
     reply_markup: {
         keyboard: [
-            [{ text: "♻️ RESTART" }], // Baris 1: Restart Sendiri di Atas
+            [{ text: "♻️ RESTART" }], 
             [ 
                 { text: "📊 LAPORAN HARIAN" }, 
                 { text: "🛡️ CEK STATUS WA" }, 
                 { text: "🚪 LOGOUT WA" } 
-            ] // Baris 2: Laporan, Status, & Logout Menyamping
+            ] 
         ],
         resize_keyboard: true,
         one_time_keyboard: false
@@ -50,7 +50,6 @@ const sendMenuEngine = (chatId, id) => {
     });
 };
 
-// Fungsi Logout Manual via Folder & Socket
 async function forceLogout(chatId, id) {
     if (engines[id].sock) {
         await engines[id].sock.logout().catch(() => {});
@@ -156,8 +155,22 @@ bot.on('message', async (msg) => {
     }
 
     if (text === "♻️ RESTART") {
-        await bot.sendMessage(chatId, "♻️ **SYSTEM RESTARTING...**", { reply_markup: { remove_keyboard: true } });
-        setTimeout(() => process.exit(0), 1500);
+        // Keyboard tetap ada karena remove_keyboard dihapus
+        await bot.sendMessage(chatId, "♻️ **SYSTEM REBOOTING...**\n_Harap tunggu sejenak._", menuBawah);
+        
+        // Soft Restart: Menutup koneksi tanpa mematikan proses (agar Railway tetap online)
+        for (let id in engines) {
+            if (engines[id].sock) {
+                engines[id].sock.end();
+                engines[id].sock = null;
+            }
+            engines[id].menuSent = false;
+            engines[id].isInitializing = false;
+        }
+        
+        setTimeout(() => {
+            bot.sendMessage(chatId, "✅ **SYSTEM ONLINE!**", menuBawah);
+        }, 2000);
     }
 });
 
@@ -165,15 +178,6 @@ bot.on('callback_query', async (q) => {
     const chatId = q.message.chat.id;
     const msgId = q.message.message_id;
     const data = q.data;
-
-    if (data === 'cmd_login') {
-        return bot.editMessageText("🚀 Pilih Engine:", {
-            chat_id: chatId, message_id: msgId,
-            reply_markup: {
-                inline_keyboard: [[{ text: "🌪 QR1", callback_data: 'login_1' }, { text: "🌊 QR2", callback_data: 'login_2' }]]
-            }
-        });
-    }
 
     if (data.startsWith('login_')) {
         const id = data.split('_')[1];
