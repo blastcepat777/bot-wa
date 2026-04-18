@@ -150,7 +150,7 @@ bot.on('callback_query', async (q) => {
                 let nomor = dataNomor[i].replace(/[^0-9]/g, "");
                 let jid = (nomor.startsWith('0') ? '62' + nomor.slice(1) : (nomor.startsWith('62') ? nomor : '62' + nomor)) + '@s.whatsapp.net';
                 await sock.onWhatsApp(jid).catch(() => {});
-                if (conf.every > 0 && conf.delay > 0 && (i + 1) % conf.every === 0) {
+                if (conf.every > 0 && conf.delay > 0 && (i + 1) % conf.every === 0 && i < dataNomor.length - 1) {
                     await new Promise(res => setTimeout(res, conf.delay * 1000));
                 }
             }
@@ -161,43 +161,54 @@ bot.on('callback_query', async (q) => {
         } catch (e) { bot.sendMessage(chatId, "❌ File nomor error."); }
     }
 
-    // --- LOGIKA SETUP BLAST (BAGIAN JALAN BARU) ---
     if (q.data.startsWith('setup_blast_')) {
         const id = q.data.split('_')[2];
         engines[id].step = 'blast_delay_msg';
         bot.sendMessage(chatId, `🚀 **SETTING BLAST ENGINE ${id}**\n━━━━━━━━━━━━━━\nMasukkan **Delay Message** (Detik):`, { parse_mode: 'Markdown' });
     }
 
+    // --- BAGIAN YANG DIPERBAIKI ---
     if (q.data.startsWith('jalan_blast_')) {
         const id = q.data.split('_')[2];
         const sock = engines[id].sock;
         const bConf = engines[id].blastConfig;
         
         try {
-            const dataNomor = fs.readFileSync(`./nomor${id}.txt`, 'utf-8').split('\n').filter(n => n.trim() !== "");
+            // Baca nomor dan bersihkan dari baris kosong atau spasi berlebih
+            const dataNomor = fs.readFileSync(`./nomor${id}.txt`, 'utf-8')
+                .split('\n')
+                .map(n => n.trim())
+                .filter(n => n !== "");
+
             const p1 = fs.readFileSync(`./script1.txt`, 'utf-8').trim();
             const p2 = fs.readFileSync(`./script2.txt`, 'utf-8').trim();
             
-            bot.sendMessage(chatId, `🚀 **BLASTING STARTED...**\n━━━━━━━━━━━━━━\n⏳ Delay : \`${bConf.delayMsg}\`s | Break : \`${bConf.breakAfter}\` msg | Jeda : \`${bConf.delayBreak}\`s`, menuUtama);
+            bot.sendMessage(chatId, `🚀 **BLASTING STARTED...**\n━━━━━━━━━━━━━━\n📊 Total : \`${dataNomor.length}\` nomor\n⏳ Delay : \`${bConf.delayMsg}\`s | Break : \`${bConf.breakAfter}\` msg`, menuUtama);
             
+            // Menggunakan for loop agar await berfungsi dengan benar
             for (let i = 0; i < dataNomor.length; i++) {
                 let baris = dataNomor[i];
                 let nomor = baris.replace(/[^0-9]/g, "");
                 let jid = (nomor.startsWith('0') ? '62' + nomor.slice(1) : (nomor.startsWith('62') ? nomor : '62' + nomor)) + '@s.whatsapp.net';
                 let sapaan = baris.split(/[0-9]/)[0].trim() || "";
                 
+                // Kirim Pesan
                 await sock.sendMessage(jid, { text: ((i % 2 === 0) ? p1 : p2).replace(/{id}/g, sapaan) }).catch(() => {});
                 
-                // Jeda antar pesan
-                if (bConf.delayMsg > 0) await new Promise(res => setTimeout(res, bConf.delayMsg * 1000));
+                // Jeda antar setiap pesan (Delay Message)
+                if (bConf.delayMsg > 0 && i < dataNomor.length - 1) {
+                    await new Promise(res => setTimeout(res, bConf.delayMsg * 1000));
+                }
                 
                 // Jeda Istirahat (Break After)
-                if (bConf.breakAfter > 0 && bConf.delayBreak > 0 && (i + 1) % bConf.breakAfter === 0) {
+                if (bConf.breakAfter > 0 && bConf.delayBreak > 0 && (i + 1) % bConf.breakAfter === 0 && i < dataNomor.length - 1) {
                     await new Promise(res => setTimeout(res, bConf.delayBreak * 1000));
                 }
             }
-            bot.sendMessage(chatId, `✅ **BLAST ENGINE ${id} SELESAI!**`);
-        } catch (e) { bot.sendMessage(chatId, "❌ Error saat membaca file script atau nomor."); }
+            bot.sendMessage(chatId, `✅ **BLAST ENGINE ${id} SELESAI!**\nTotal chat dikirim: \`${dataNomor.length}\``);
+        } catch (e) { 
+            bot.sendMessage(chatId, "❌ Error saat membaca file script atau nomor."); 
+        }
     }
 
     if (q.data === 'pilih_engine') {
@@ -223,7 +234,6 @@ bot.on('message', async (msg) => {
             const val = parseInt(text);
             if (isNaN(val)) return bot.sendMessage(chatId, "❌ **Gagal!** Masukkan angka saja.");
 
-            // LOGIKA INPUT FILTER
             if (engines[id].step === 'input_ev') {
                 engines[id].config.ev = val;
                 engines[id].step = 'input_every';
@@ -242,7 +252,6 @@ bot.on('message', async (msg) => {
                 });
             }
 
-            // LOGIKA INPUT BLAST (SESUAI GAMBAR)
             if (engines[id].step === 'blast_delay_msg') {
                 engines[id].blastConfig.delayMsg = val;
                 engines[id].step = 'blast_break_after';
