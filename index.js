@@ -16,17 +16,19 @@ const getWIBTime = () => {
     return new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta", dateStyle: 'medium', timeStyle: 'medium' }) + " WIB";
 };
 
+// --- KEYBOARD BAWAH (RESTART, LAPORAN, DLL) ---
 const menuBawah = {
     reply_markup: {
         keyboard: [
             [{ text: "♻️ RESTART" }], 
             [{ text: "📊 LAPORAN HARIAN" }, { text: "🛡️ CEK STATUS WA" }, { text: "🚪 LOGOUT WA" }] 
         ],
-        resize_keyboard: true
+        resize_keyboard: true,
+        one_time_keyboard: false
     }
 };
 
-// --- FUNGSI EDIT PESAN (AGAR TIDAK NUMPUK) ---
+// --- FUNGSI TAMPILKAN ONLINE (TOMBOL LOGIN TUNGGAL) ---
 const sendPesanOnline = (chatId) => {
     bot.sendMessage(chatId, "✅ **SYSTEM ONLINE!**\nSilahkan login kembali untuk memulai blast:", {
         parse_mode: 'Markdown',
@@ -73,7 +75,7 @@ async function initWA(chatId, id, msgIdToEdit) {
                     }
                 };
 
-                // Hapus pesan teks persiapan, ganti dengan foto QR (hanya sekali)
+                // Jika ada pesan "Menyiapkan QR", hapus dulu baru kirim foto QR
                 if (msgIdToEdit) {
                     await bot.deleteMessage(chatId, msgIdToEdit).catch(() => {});
                     msgIdToEdit = null; 
@@ -100,7 +102,6 @@ async function initWA(chatId, id, msgIdToEdit) {
             };
 
             if (engines[id].lastQrMsgId) {
-                // Hapus foto QR, ganti dengan pesan status online agar bersih
                 await bot.deleteMessage(chatId, engines[id].lastQrMsgId).catch(() => {});
                 engines[id].lastQrMsgId = null;
             }
@@ -109,7 +110,8 @@ async function initWA(chatId, id, msgIdToEdit) {
 
         if (connection === 'close') {
             engines[id].isInitializing = false;
-            if (lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut) initWA(chatId, id);
+            const code = lastDisconnect?.error?.output?.statusCode;
+            if (code !== DisconnectReason.loggedOut) initWA(chatId, id);
         }
     });
 }
@@ -126,11 +128,16 @@ bot.on('message', async (msg) => {
                 chat_id: chatId,
                 message_id: rebootMsg.message_id,
                 parse_mode: 'Markdown',
-                reply_markup: { inline_keyboard: [[{ text: "🚀 LOGIN", callback_data: "pilih_engine" }]] }
+                reply_markup: { 
+                    inline_keyboard: [[{ text: "🚀 LOGIN", callback_data: "pilih_engine" }]]
+                }
             });
         }, 2000);
     }
-    // ... (Laporan Harian & Cek Status tetap sama menggunakan menuBawah)
+
+    if (msg.text === "📊 LAPORAN HARIAN") {
+        bot.sendMessage(chatId, `📊 **LAPORAN BLAST**\nJam Cek: ${getWIBTime()}\nTotal: ${stats.totalBlast}\nTerakhir: ${stats.lastBlastTime}`, menuBawah);
+    }
 });
 
 bot.on('callback_query', async (q) => {
@@ -154,7 +161,6 @@ bot.on('callback_query', async (q) => {
 
     if (data.startsWith('login_')) {
         const id = data.split('_')[1];
-        // Edit pesan menjadi "Menyiapkan..." di tempat yang sama
         await bot.editMessageText(`⏳ **Menyiapkan QR Engine ${id}...**`, {
             chat_id: chatId,
             message_id: msgId,
@@ -170,6 +176,11 @@ bot.on('callback_query', async (q) => {
             parse_mode: 'Markdown',
             reply_markup: { inline_keyboard: [[{ text: "🚀 LOGIN", callback_data: "pilih_engine" }]] }
         });
+    }
+
+    if (data === 'batal') {
+        if (q.message.photo) await bot.deleteMessage(chatId, msgId).catch(() => {});
+        sendPesanOnline(chatId);
     }
 
     if (data.startsWith('filter_')) {
