@@ -2,6 +2,7 @@ const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion,
 const TelegramBot = require('node-telegram-bot-api');
 const QRCode = require('qrcode');
 const pino = require('pino');
+const fs = require('fs'); // Tambahkan fs untuk hapus sesi
 
 const TOKEN = '8657782534:AAEitxbv3VhE_X9AUMMePxRtDgAfMNqOv2k';
 const bot = new TelegramBot(TOKEN, { polling: true });
@@ -12,11 +13,18 @@ let engines = {
     2: { sock: null, lastQrMsgId: null, session: './session_2', color: '🌊', isInitializing: false }
 };
 
+// Variabel Laporan (Bisa dihubungkan ke Database nantinya)
+let stats = {
+    totalHariIni: 0,
+    rekapanHarian: 0,
+    rekapanBulanan: 0,
+    terakhirBlast: "-"
+};
+
 const getWIBTime = () => {
     return new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta", dateStyle: 'medium', timeStyle: 'medium' }) + " WIB";
 };
 
-// --- KEYBOARD PERMANEN (WAJIB ADA) ---
 const menuUtama = {
     reply_markup: {
         keyboard: [
@@ -26,17 +34,6 @@ const menuUtama = {
         resize_keyboard: true,
         one_time_keyboard: false
     }
-};
-
-// --- FUNGSI TAMPILAN AWAL ---
-const sendPesanOnline = (chatId) => {
-    bot.sendMessage(chatId, "✅ **SYSTEM ONLINE!**\nSilahkan login kembali untuk memulai blast:", {
-        parse_mode: 'Markdown',
-        reply_markup: {
-            inline_keyboard: [[{ text: "🚀 LOGIN", callback_data: "pilih_engine" }]],
-            ...menuUtama.reply_markup 
-        }
-    });
 };
 
 // --- CORE FUNCTIONS ---
@@ -74,24 +71,11 @@ async function initWA(chatId, id, msgIdToEdit) {
                             ]
                         }
                     };
-
-                    if (msgIdToEdit) {
-                        await bot.deleteMessage(chatId, msgIdToEdit).catch(() => {});
-                        msgIdToEdit = null;
-                    }
-
+                    if (msgIdToEdit) { await bot.deleteMessage(chatId, msgIdToEdit).catch(() => {}); msgIdToEdit = null; }
                     if (engines[id].lastQrMsgId) await bot.deleteMessage(chatId, engines[id].lastQrMsgId).catch(() => {});
                     const sent = await bot.sendPhoto(chatId, buffer, opts);
                     engines[id].lastQrMsgId = sent.message_id;
                 } catch (e) { console.log("QR Error"); }
-            }
-
-            if (connection === 'close') {
-                const reason = lastDisconnect?.error?.output?.statusCode;
-                engines[id].isInitializing = false;
-                if (reason !== DisconnectReason.loggedOut) {
-                    setTimeout(() => initWA(chatId, id), 3000);
-                }
             }
 
             if (connection === 'open') {
@@ -106,38 +90,51 @@ async function initWA(chatId, id, msgIdToEdit) {
                 });
             }
         });
-    } catch (err) {
-        engines[id].isInitializing = false;
-        console.error(err);
-    }
+    } catch (err) { engines[id].isInitializing = false; }
 }
 
 // --- HANDLERS ---
 
-// Fungsi Restart (SOLUSI FINAL: 2 Pesan Cepat agar Keyboard Typing muncul)
+const handleLogout = async (chatId) => {
+    let text = "🚪 **PROSES LOGOUT...**\n";
+    const msg = await bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
+
+    for (let i in engines) {
+        if (engines[i].sock) {
+            await engines[i].sock.logout().catch(() => {});
+            engines[i].sock.end();
+            engines[i].sock = null;
+        }
+        // Hapus folder sesi secara fisik agar login ulang bersih
+        if (fs.existsSync(engines[i].session)) {
+            fs.rmSync(engines[i].session, { recursive: true, force: true });
+        }
+        engines[i].isInitializing = false;
+        text += `${engines[i].color} Engine ${i}: Berhasil Logout & Sesi Dihapus\n`;
+    }
+
+    bot.editMessageText(text + "\n✅ Semua engine telah logout. Silahkan login kembali.", {
+        chat_id: chatId,
+        message_id: msg.message_id,
+        parse_mode: 'Markdown',
+        reply_markup: {
+            inline_keyboard: [[{ text: "🚀 LOGIN ULANG", callback_data: "pilih_engine" }]]
+        }
+    });
+};
+
 const handleRestartLogika = async (chatId) => {
     const rebootMsg = await bot.sendMessage(chatId, "♻️ **SYSTEM REBOOTING...**", menuUtama);
-    
     for (let i in engines) { 
-        if (engines[i].sock) { 
-            try { engines[i].sock.end(); } catch (e) {}
-            engines[i].sock = null; 
-        }
+        if (engines[i].sock) { try { engines[i].sock.end(); } catch (e) {} engines[i].sock = null; }
         engines[i].isInitializing = false; 
     }
-    
     setTimeout(async () => {
         await bot.deleteMessage(chatId, rebootMsg.message_id).catch(() => {});
-        
-        // 1. Kirim pesan pertama untuk memastikan Keyboard Bawah muncul
         await bot.sendMessage(chatId, "♻️ **SYSTEM BERHASIL RESTART**", menuUtama);
-        
-        // 2. Kirim pesan kedua berisi tombol LOGIN
         bot.sendMessage(chatId, "Silahkan klik tombol di bawah untuk login:", {
             parse_mode: 'Markdown',
-            reply_markup: { 
-                inline_keyboard: [[{ text: "🚀 LOGIN", callback_data: "pilih_engine" }]]
-            }
+            reply_markup: { inline_keyboard: [[{ text: "🚀 LOGIN", callback_data: "pilih_engine" }]] }
         });
     }, 2000);
 };
@@ -146,12 +143,23 @@ bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text;
 
-    if (text === "♻️ RESTART" || text === "/restart") {
-        await handleRestartLogika(chatId);
-    }
+    if (text === "♻️ RESTART" || text === "/restart") await handleRestartLogika(chatId);
+    if (text === "🚪 LOGOUT WA") await handleLogout(chatId);
 
     if (text === "📊 LAPORAN HARIAN") {
-        bot.sendMessage(chatId, `📊 **LAPORAN BLAST**\nTotal Berhasil: 0`, menuUtama);
+        const laporan = `📊 **LAPORAN BLAST NINJA**\n` +
+                        `━━━━━━━━━━━━━━━━━━━\n` +
+                        `🕒 **Terakhir Blast:**\n${stats.terakhirBlast}\n\n` +
+                        `🚀 **Total Blast Hari Ini:** ${stats.totalHariIni}\n` +
+                        `📈 **Rekapan Total Harian:** ${stats.rekapanHarian}\n` +
+                        `━━━━━━━━━━━━━━━━━━━`;
+        
+        bot.sendMessage(chatId, laporan, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                inline_keyboard: [[{ text: "📂 LIHAT REKAPAN BULANAN", callback_data: "view_bulanan" }]]
+            }
+        });
     }
 
     if (text === "🛡️ CEK STATUS WA") {
@@ -165,6 +173,33 @@ bot.on('callback_query', async (q) => {
     const chatId = q.message.chat.id;
     const msgId = q.message.message_id;
 
+    if (q.data === 'view_bulanan') {
+        bot.editMessageText(`📅 **REKAPAN TOTAL BULANAN**\n━━━━━━━━━━━━\nTotal: ${stats.rekapanBulanan}\n━━━━━━━━━━━━`, {
+            chat_id: chatId,
+            message_id: msgId,
+            reply_markup: {
+                inline_keyboard: [[{ text: "⬅️ KEMBALI", callback_data: "back_to_laporan" }]]
+            }
+        });
+    }
+
+    if (q.data === 'back_to_laporan') {
+        const laporan = `📊 **LAPORAN BLAST NINJA**\n` +
+                        `━━━━━━━━━━━━━━━━━━━\n` +
+                        `🕒 **Terakhir Blast:**\n${stats.terakhirBlast}\n\n` +
+                        `🚀 **Total Blast Hari Ini:** ${stats.totalHariIni}\n` +
+                        `📈 **Rekapan Total Harian:** ${stats.rekapanHarian}\n` +
+                        `━━━━━━━━━━━━━━━━━━━`;
+        bot.editMessageText(laporan, {
+            chat_id: chatId,
+            message_id: msgId,
+            parse_mode: 'Markdown',
+            reply_markup: {
+                inline_keyboard: [[{ text: "📂 LIHAT REKAPAN BULANAN", callback_data: "view_bulanan" }]]
+            }
+        });
+    }
+
     if (q.data === 'pilih_engine') {
         bot.editMessageText("📌 **PILIH ENGINE:**", {
             chat_id: chatId,
@@ -175,25 +210,24 @@ bot.on('callback_query', async (q) => {
                     [{ text: "❌ BATAL", callback_data: "batal" }]
                 ]
             }
-        }).catch(() => {});
+        });
     }
 
     if (q.data.startsWith('login_')) {
         const id = q.data.split('_')[1];
-        await bot.editMessageText(`⏳ **Menyiapkan QR Engine ${id}...**`, {
-            chat_id: chatId,
-            message_id: msgId
-        }).catch(() => {});
+        await bot.editMessageText(`⏳ **Menyiapkan QR Engine ${id}...**`, { chat_id: chatId, message_id: msgId });
         initWA(chatId, id, msgId); 
     }
 
     if (q.data === 'batal') {
         await bot.deleteMessage(chatId, msgId).catch(() => {});
-        sendPesanOnline(chatId);
+        bot.sendMessage(chatId, "✅ **SYSTEM ONLINE!**", menuUtama);
     }
 
     bot.answerCallbackQuery(q.id);
 });
 
 process.on('uncaughtException', (err) => { console.error('Error:', err); });
-bot.onText(/\/start/, (msg) => sendPesanOnline(msg.chat.id));
+bot.onText(/\/start/, (msg) => {
+    bot.sendMessage(msg.chat.id, "✅ **SYSTEM ONLINE!**", menuUtama);
+});
