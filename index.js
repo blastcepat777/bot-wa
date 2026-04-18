@@ -18,24 +18,28 @@ const getWIBTime = () => {
     return new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta", dateStyle: 'medium', timeStyle: 'medium' }) + " WIB";
 };
 
-// --- KEYBOARD CONFIG ---
+// --- KEYBOARD PERMANEN (WAJIB DISERTAKAN DI SETIAP MESSAGE) ---
 const menuBawah = {
     reply_markup: {
         keyboard: [
             [{ text: "♻️ RESTART" }], 
             [{ text: "📊 LAPORAN HARIAN" }, { text: "🛡️ CEK STATUS WA" }, { text: "🚪 LOGOUT WA" }] 
         ],
-        resize_keyboard: true
+        resize_keyboard: true,
+        one_time_keyboard: false
     }
 };
 
-// Fungsi munculkan tombol login di bawah pesan System Online
+// --- FUNGSI TAMPILKAN LOGIN (DENGAN KEYBOARD BAWAH) ---
 const sendPilihanLogin = (chatId, text = "✅ **SYSTEM ONLINE!**\nSilahkan login kembali untuk memulai blast:") => {
     bot.sendMessage(chatId, text, {
+        parse_mode: 'Markdown',
         reply_markup: {
             inline_keyboard: [
                 [{ text: "🚀 LOGIN ENGINE 1", callback_data: "login_1" }, { text: "🚀 LOGIN ENGINE 2", callback_data: "login_2" }]
-            ]
+            ],
+            // Ini kunci agar keyboard bawah tetap muncul
+            ...menuBawah.reply_markup 
         }
     });
 };
@@ -61,7 +65,6 @@ async function initWA(chatId, id) {
     sock.ev.on('connection.update', async (u) => {
         const { connection, qr, lastDisconnect } = u;
 
-        // QR DENGAN TOMBOL NAVIGASI LENGKAP
         if (qr && chatId) {
             try {
                 const buffer = await QRCode.toBuffer(qr, { scale: 4 });
@@ -73,7 +76,8 @@ async function initWA(chatId, id) {
                         inline_keyboard: [
                             [{ text: `🔄 KE QR ENGINE ${otherId}`, callback_data: `login_${otherId}` }],
                             [{ text: "❌ CANCEL", callback_data: 'batal' }]
-                        ]
+                        ],
+                        ...menuBawah.reply_markup // Pastikan keyboard bawah tidak hilang saat kirim foto
                     }
                 };
                 if (engines[id].lastQrMsgId) await bot.deleteMessage(chatId, engines[id].lastQrMsgId).catch(() => {});
@@ -90,7 +94,8 @@ async function initWA(chatId, id) {
                     inline_keyboard: [
                         [{ text: `🔍 FILTER NOMOR ${id}`, callback_data: `filter_${id}` }],
                         [{ text: "❌ KELUAR", callback_data: 'batal' }]
-                    ]
+                    ],
+                    ...menuBawah.reply_markup
                 }
             });
         }
@@ -108,12 +113,11 @@ bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     
     if (msg.text === "♻️ RESTART") {
-        await bot.sendMessage(chatId, "♻️ **SYSTEM REBOOTING...**\n_Harap tunggu sejenak._", menuBawah);
+        await bot.sendMessage(chatId, "♻️ **SYSTEM REBOOTING...**", menuBawah);
         for (let i in engines) { 
-            if (engines[i].sock) engines[i].sock.end(); 
+            if (engines[i].sock) { engines[i].sock.end(); engines[i].sock = null; }
             engines[i].isInitializing = false; 
         }
-        // Jeda agar reboot terasa, lalu kirim pesan online + tombol login
         setTimeout(() => sendPilihanLogin(chatId), 2000);
     }
 
@@ -140,7 +144,8 @@ bot.on('message', async (msg) => {
             reply_markup: {
                 inline_keyboard: [
                     [{ text: "🌪 LOGOUT ENGINE 1", callback_data: "logout_1" }, { text: "🌊 LOGOUT ENGINE 2", callback_data: "logout_2" }]
-                ]
+                ],
+                ...menuBawah.reply_markup
             }
         });
     }
@@ -152,8 +157,7 @@ bot.on('callback_query', async (q) => {
 
     if (data.startsWith('login_')) {
         const id = data.split('_')[1];
-        if (engines[id].isInitializing) return bot.answerCallbackQuery(q.id, { text: "Proses sedang berjalan..." });
-        bot.sendMessage(chatId, `⏳ **Menyiapkan QR Engine ${id}...**`);
+        bot.sendMessage(chatId, `⏳ **Menyiapkan QR Engine ${id}...**`, menuBawah);
         initWA(chatId, id);
     }
 
@@ -166,7 +170,8 @@ bot.on('callback_query', async (q) => {
         const id = data.split('_')[1];
         bot.sendMessage(chatId, `${engines[id].color} **FILTER ${id} SELESAI**\nAktif: 28`, {
             reply_markup: {
-                inline_keyboard: [[{ text: `🚀 JALAN BLAST ${id}`, callback_data: `jalan_${id}` }]]
+                inline_keyboard: [[{ text: `🚀 JALAN BLAST ${id}`, callback_data: `jalan_${id}` }]],
+                ...menuBawah.reply_markup
             }
         });
     }
@@ -174,7 +179,7 @@ bot.on('callback_query', async (q) => {
     if (data.startsWith('jalan_')) {
         const id = data.split('_')[1];
         stats.lastBlastTime = getWIBTime();
-        stats.totalBlast += 28; // Simulasi total
+        stats.totalBlast += 28;
         bot.sendMessage(chatId, `✅ **BLAST ENGINE ${id} SELESAI!**`, menuBawah);
     }
     bot.answerCallbackQuery(q.id);
