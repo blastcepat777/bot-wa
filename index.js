@@ -17,7 +17,7 @@ const getWIBTime = () => {
     return new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta", dateStyle: 'medium', timeStyle: 'medium' }) + " WIB";
 };
 
-// --- KEYBOARD PERMANEN (WAJIB ADA DI SETIAP EDIT) ---
+// --- KEYBOARD PERMANEN ---
 const menuBawah = {
     reply_markup: {
         keyboard: [
@@ -29,7 +29,7 @@ const menuBawah = {
     }
 };
 
-// --- ALUR AWAL ---
+// --- FUNGSI LOGIN ---
 const sendPesanOnline = (chatId) => {
     bot.sendMessage(chatId, "✅ **SYSTEM ONLINE!**\nSilahkan login kembali untuk memulai blast:", {
         parse_mode: 'Markdown',
@@ -76,7 +76,6 @@ async function initWA(chatId, id, msgIdToEdit) {
                     }
                 };
 
-                // Hapus pesan teks "Menyiapkan..." agar diganti Foto QR (Tetap di tempat yang sama)
                 if (msgIdToEdit) {
                     await bot.deleteMessage(chatId, msgIdToEdit).catch(() => {});
                     msgIdToEdit = null;
@@ -106,7 +105,7 @@ bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     
     if (msg.text === "♻️ RESTART") {
-        // Kirim pesan Reboot
+        // 1. Tampilkan status rebooting
         const rebootMsg = await bot.sendMessage(chatId, "♻️ **SYSTEM REBOOTING...**", menuBawah);
         
         for (let i in engines) { 
@@ -114,15 +113,15 @@ bot.on('message', async (msg) => {
             engines[i].isInitializing = false; 
         }
         
-        // EDIT gelembung yang sama menjadi ONLINE
+        // 2. Edit menjadi BERHASIL RESTART + Tombol LOGIN
         setTimeout(() => {
-            bot.editMessageText("✅ **SYSTEM ONLINE!**\nSilahkan login kembali untuk memulai blast:", {
+            bot.editMessageText("♻️ **SYSTEM BERHASIL RESTART**\nSilahkan klik tombol di bawah untuk login:", {
                 chat_id: chatId,
                 message_id: rebootMsg.message_id,
                 parse_mode: 'Markdown',
                 reply_markup: { 
                     inline_keyboard: [[{ text: "🚀 LOGIN", callback_data: "pilih_engine" }]],
-                    ...menuBawah.reply_markup // Pastikan tombol bawah muncul lagi
+                    ...menuBawah.reply_markup 
                 }
             });
         }, 2000);
@@ -144,7 +143,6 @@ bot.on('callback_query', async (q) => {
     const msgId = q.message.message_id;
 
     if (q.data === 'pilih_engine') {
-        // EDIT pesan LOGIN menjadi PILIH ENGINE
         bot.editMessageText("📌 **PILIH ENGINE:**", {
             chat_id: chatId,
             message_id: msgId,
@@ -160,7 +158,6 @@ bot.on('callback_query', async (q) => {
 
     if (q.data.startsWith('login_')) {
         const id = q.data.split('_')[1];
-        // EDIT pesan menjadi MENYIAPKAN
         await bot.editMessageText(`⏳ **Menyiapkan QR Engine ${id}...**`, {
             chat_id: chatId,
             message_id: msgId,
