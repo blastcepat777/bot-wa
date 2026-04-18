@@ -35,7 +35,7 @@ const menuUtama = {
     }
 };
 
-// --- FUNGSI PROSES FILTER (YANG DIPERBAIKI) ---
+// --- FUNGSI PROSES FILTER (DIPERBAIKI) ---
 async function startFilter(chatId, id) {
     const filePath = `./nomor${id}.txt`;
     
@@ -54,8 +54,7 @@ async function startFilter(chatId, id) {
         return bot.sendMessage(chatId, `❌ **Engine ${id} Offline!** Silahkan login dulu.`, menuUtama);
     }
 
-    // Pesan Progress Awal
-    const statusMsg = await bot.sendMessage(chatId, `🔍 **MEMULAI FILTER ENGINE ${id}...**\n━━━━━━━━━━━━━━━━━━━\n⏳ Progress: 0/${dataRaw.length}\n✅ Aktif: 0\n❌ Tidak Aktif: 0\n━━━━━━━━━━━━━━━━━━━`);
+    const statusMsg = await bot.sendMessage(chatId, `🔍 **MEMULAI FILTER ENGINE ${id}...**\n━━━━━━━━━━━━━━━━━━━\n⏳ Progress: 0/${dataRaw.length}\n✅ Aktif: 0\n━━━━━━━━━━━━━━━━━━━`);
 
     let aktif = [];
     let tidakAktif = 0;
@@ -63,13 +62,12 @@ async function startFilter(chatId, id) {
     for (let i = 0; i < dataRaw.length; i++) {
         let nomor = dataRaw[i];
         
-        // Normalisasi format nomor
+        // Normalisasi nomor (tambah 62 jika diawali 0)
         if (nomor.startsWith('0')) nomor = '62' + nomor.slice(1);
         if (!nomor.startsWith('62')) nomor = '62' + nomor;
         const jid = nomor.includes('@s.whatsapp.net') ? nomor : `${nomor}@s.whatsapp.net`;
 
         try {
-            // Cek ke WhatsApp Server
             const [result] = await sock.onWhatsApp(jid);
             if (result && result.exists) {
                 aktif.push(result.jid);
@@ -80,7 +78,7 @@ async function startFilter(chatId, id) {
             tidakAktif++;
         }
 
-        // Update progress setiap 5 nomor agar Telegram tidak anggap spam
+        // Update progress setiap 5 nomor
         if ((i + 1) % 5 === 0 || (i + 1) === dataRaw.length) {
             await bot.editMessageText(`🔍 **PROSES FILTER ENGINE ${id}...**\n━━━━━━━━━━━━━━━━━━━\n⏳ Progress: ${i + 1}/${dataRaw.length}\n✅ Aktif: ${aktif.length}\n❌ Tidak Aktif: ${tidakAktif}\n━━━━━━━━━━━━━━━━━━━`, {
                 chat_id: chatId,
@@ -88,21 +86,20 @@ async function startFilter(chatId, id) {
             }).catch(() => {});
         }
         
-        // Delay dikit biar aman dari banned (500ms)
+        // Delay 500ms biar aman dari spam
         await new Promise(res => setTimeout(res, 500));
     }
 
-    // Simpan hasil ke memori untuk blast nanti
+    // Simpan hasil ke memori engine
     engines[id].listAktif = aktif;
 
-    // Laporan Akhir
-    const hasilText = `✅ **FILTER SELESAI ENGINE ${id}!**\n━━━━━━━━━━━━━━━━━━━\n📊 **HASIL AKHIR:**\n🟢 WA Aktif: ${aktif.length}\n🔴 Tidak Aktif: ${tidakAktif}\n📦 Total Data: ${dataRaw.length}\n━━━━━━━━━━━━━━━━━━━\n\nNomor aktif sudah siap di-blast.`;
+    const hasilText = `✅ **FILTER SELESAI ENGINE ${id}!**\n━━━━━━━━━━━━━━━━━━━\n📊 **HASIL:**\n🟢 WA Aktif: ${aktif.length}\n🔴 Tidak Aktif: ${tidakAktif}\n━━━━━━━━━━━━━━━━━━━\nNomor aktif sudah siap. Klik tombol di bawah:`;
     
     bot.sendMessage(chatId, hasilText, {
         parse_mode: 'Markdown',
         reply_markup: {
             inline_keyboard: [
-                [{ text: "🚀 LANJUT BLAST SEKARANG", callback_data: `start_blast_${id}` }],
+                [{ text: "🚀 JALAN (START BLAST)", callback_data: `start_blast_${id}` }],
                 [{ text: "♻️ ULANGI FILTER", callback_data: `start_filter_${id}` }]
             ]
         }
@@ -202,28 +199,20 @@ const handleLogout = async (chatId) => {
     
     for (let i in engines) {
         if (engines[i].sock) {
-            try {
-                await engines[i].sock.logout();
-                engines[i].sock.end();
-            } catch (e) {}
+            try { await engines[i].sock.logout(); engines[i].sock.end(); } catch (e) {}
             engines[i].sock = null;
         }
-        
         if (fs.existsSync(engines[i].session)) {
-            try {
-                fs.rmSync(engines[i].session, { recursive: true, force: true });
-            } catch (e) { console.log("Gagal hapus folder sesi"); }
+            try { fs.rmSync(engines[id].session, { recursive: true, force: true }); } catch (e) {}
         }
         engines[i].isInitializing = false;
     }
 
-    bot.editMessageText("✅ **LOGOUT TOTAL BERHASIL**\nSilahkan klik login untuk scan ulang.", {
+    bot.editMessageText("✅ **LOGOUT TOTAL BERHASIL**", {
         chat_id: chatId,
         message_id: msg.message_id,
         parse_mode: 'Markdown',
-        reply_markup: {
-            inline_keyboard: [[{ text: "🚀 LOGIN ULANG", callback_data: "pilih_engine" }]]
-        }
+        reply_markup: { inline_keyboard: [[{ text: "🚀 LOGIN ULANG", callback_data: "pilih_engine" }]] }
     });
 };
 
@@ -235,8 +224,7 @@ const handleRestartLogika = async (chatId) => {
     }
     setTimeout(async () => {
         await bot.deleteMessage(chatId, rebootMsg.message_id).catch(() => {});
-        await bot.sendMessage(chatId, "♻️ **SYSTEM BERHASIL RESTART**", menuUtama);
-        bot.sendMessage(chatId, "Silahkan klik tombol di bawah untuk login:", {
+        bot.sendMessage(chatId, "♻️ **SYSTEM BERHASIL RESTART**", {
             parse_mode: 'Markdown',
             reply_markup: { inline_keyboard: [[{ text: "🚀 LOGIN", callback_data: "pilih_engine" }]] }
         });
@@ -288,22 +276,15 @@ bot.on('callback_query', async (q) => {
 
     if (q.data.startsWith('start_filter_')) {
         const id = q.data.split('_')[2];
-        bot.answerCallbackQuery(q.id, { text: `Menjalankan Filter Engine ${id}...` });
+        bot.answerCallbackQuery(q.id, { text: `Menjalankan Engine ${id}...` });
         await startFilter(chatId, id);
     }
 
-    if (q.data === 'view_bulanan') {
-        bot.editMessageText(`📅 **REKAPAN TOTAL BULANAN**\n━━━━━━━━━━━━\nTotal: ${stats.rekapanBulanan}\n━━━━━━━━━━━━`, {
-            chat_id: chatId, message_id: msgId,
-            reply_markup: { inline_keyboard: [[{ text: "⬅️ KEMBALI", callback_data: "back_to_laporan" }]] }
-        });
-    }
-
-    if (q.data === 'back_to_laporan') {
-        const laporan = `📊 **LAPORAN BLAST NINJA**\n━━━━━━━━━━━━━━━━━━━\n🕒 **Terakhir Blast:**\n${stats.terakhirBlast}\n\n🚀 **Total Blast Hari Ini:** ${stats.totalHariIni}\n📈 **Rekapan Total Harian:** ${stats.rekapanHarian}\n━━━━━━━━━━━━━━━━━━━`;
-        bot.editMessageText(laporan, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown',
-            reply_markup: { inline_keyboard: [[{ text: "📂 LIHAT REKAPAN BULANAN", callback_data: "view_bulanan" }]] }
-        });
+    if (q.data.startsWith('start_blast_')) {
+        const id = q.data.split('_')[2];
+        bot.answerCallbackQuery(q.id, { text: `Memulai Blast Engine ${id}...` });
+        bot.sendMessage(chatId, `🚀 **PROSES BLAST ENGINE ${id} DIMULAI!**\nTarget: ${engines[id].listAktif.length} nomor.`);
+        // Tambahkan fungsi blast Anda di sini
     }
 
     if (q.data === 'batal') {
