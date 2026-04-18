@@ -18,7 +18,7 @@ const getWIBTime = () => {
     return new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta", dateStyle: 'medium', timeStyle: 'medium' }) + " WIB";
 };
 
-// --- KEYBOARD PERMANEN (WAJIB DISERTAKAN DI SETIAP MESSAGE) ---
+// --- KEYBOARD PERMANEN (RESTART, LAPORAN, DLL) ---
 const menuBawah = {
     reply_markup: {
         keyboard: [
@@ -30,16 +30,28 @@ const menuBawah = {
     }
 };
 
-// --- FUNGSI TAMPILKAN LOGIN (DENGAN KEYBOARD BAWAH) ---
-const sendPilihanLogin = (chatId, text = "✅ **SYSTEM ONLINE!**\nSilahkan login kembali untuk memulai blast:") => {
-    bot.sendMessage(chatId, text, {
+// --- ALUR SETELAH RESTART: TOMBOL LOGIN TUNGGAL ---
+const sendPesanOnline = (chatId) => {
+    bot.sendMessage(chatId, "✅ **SYSTEM ONLINE!**\nSilahkan login kembali untuk memulai blast:", {
         parse_mode: 'Markdown',
         reply_markup: {
             inline_keyboard: [
-                [{ text: "🚀 LOGIN ENGINE 1", callback_data: "login_1" }, { text: "🚀 LOGIN ENGINE 2", callback_data: "login_2" }]
+                [{ text: "🚀 LOGIN", callback_data: "pilih_engine" }]
             ],
-            // Ini kunci agar keyboard bawah tetap muncul
             ...menuBawah.reply_markup 
+        }
+    });
+};
+
+// --- PILIHAN ENGINE (MUNCUL SETELAH KLIK 🚀 LOGIN) ---
+const sendPilihanEngine = (chatId) => {
+    bot.sendMessage(chatId, "📌 **PILIH ENGINE:**", {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: "🌪 ENGINE 1", callback_data: "login_1" }, { text: "🌊 ENGINE 2", callback_data: "login_2" }],
+                [{ text: "❌ BATAL", callback_data: "batal" }]
+            ],
+            ...menuBawah.reply_markup
         }
     });
 };
@@ -77,7 +89,7 @@ async function initWA(chatId, id) {
                             [{ text: `🔄 KE QR ENGINE ${otherId}`, callback_data: `login_${otherId}` }],
                             [{ text: "❌ CANCEL", callback_data: 'batal' }]
                         ],
-                        ...menuBawah.reply_markup // Pastikan keyboard bawah tidak hilang saat kirim foto
+                        ...menuBawah.reply_markup
                     }
                 };
                 if (engines[id].lastQrMsgId) await bot.deleteMessage(chatId, engines[id].lastQrMsgId).catch(() => {});
@@ -118,7 +130,7 @@ bot.on('message', async (msg) => {
             if (engines[i].sock) { engines[i].sock.end(); engines[i].sock = null; }
             engines[i].isInitializing = false; 
         }
-        setTimeout(() => sendPilihanLogin(chatId), 2000);
+        setTimeout(() => sendPesanOnline(chatId), 2000);
     }
 
     if (msg.text === "📊 LAPORAN HARIAN") {
@@ -155,6 +167,13 @@ bot.on('callback_query', async (q) => {
     const chatId = q.message.chat.id;
     const data = q.data;
 
+    // Tahap 1: Klik 🚀 LOGIN
+    if (data === 'pilih_engine') {
+        await bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
+        sendPilihanEngine(chatId);
+    }
+
+    // Tahap 2: Klik Engine Spesifik
     if (data.startsWith('login_')) {
         const id = data.split('_')[1];
         bot.sendMessage(chatId, `⏳ **Menyiapkan QR Engine ${id}...**`, menuBawah);
@@ -163,7 +182,7 @@ bot.on('callback_query', async (q) => {
 
     if (data === 'batal') {
         await bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
-        sendPilihanLogin(chatId, "🌪 **NINJA STORM ENGINE**\nSilahkan pilih:");
+        sendPesanOnline(chatId);
     }
 
     if (data.startsWith('filter_')) {
@@ -185,4 +204,4 @@ bot.on('callback_query', async (q) => {
     bot.answerCallbackQuery(q.id);
 });
 
-bot.onText(/\/start/, (msg) => sendPilihanLogin(msg.chat.id));
+bot.onText(/\/start/, (msg) => sendPesanOnline(msg.chat.id));
