@@ -34,6 +34,29 @@ const menuUtama = {
     }
 };
 
+// --- FUNGSI PROSES FILTER ---
+async function startFilter(chatId, id) {
+    const filePath = `./nomor${id}.txt`;
+    if (!fs.existsSync(filePath)) return bot.sendMessage(chatId, `❌ **File ${filePath} tidak ditemukan!**`, menuUtama);
+
+    const dataNomor = fs.readFileSync(filePath, 'utf-8').split('\n').filter(n => n.trim() !== "");
+    if (dataNomor.length === 0) return bot.sendMessage(chatId, `❌ **File ${filePath} kosong!**`, menuUtama);
+
+    bot.sendMessage(chatId, `🔍 **MEMULAI FILTER ENGINE ${id}...**\n📂 File: nomor${id}.txt\n🔢 Total: ${dataNomor.length} nomor`, menuUtama);
+    
+    setTimeout(() => {
+        bot.sendMessage(chatId, `✅ **FILTER SELESAI ENGINE ${id}**\n━━━━━━━━━━━━━━━━━━━\n📂 File: nomor${id}.txt\n🔢 Terdeteksi: ${dataNomor.length} Nomor\n━━━━━━━━━━━━━━━━━━━\nKlik tombol di bawah untuk memulai blast:`, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "🚀 JALAN", callback_data: `jalan_blast_${id}` }],
+                    [{ text: "❌ BATAL", callback_data: "batal" }]
+                ]
+            }
+        });
+    }, 2000);
+}
+
 // --- CORE FUNCTIONS ---
 async function initWA(chatId, id, msgIdToEdit) {
     if (engines[id].isInitializing && !msgIdToEdit) return;
@@ -52,7 +75,7 @@ async function initWA(chatId, id, msgIdToEdit) {
             printQRInTerminal: false,
             syncFullHistory: false, 
             connectTimeoutMs: 60000,
-            qrTimeoutMs: 60000, // Tambahan agar tidak muter terus
+            qrTimeoutMs: 60000,
             defaultQueryTimeoutMs: 0,
             keepAliveIntervalMs: 10000
         });
@@ -63,14 +86,11 @@ async function initWA(chatId, id, msgIdToEdit) {
 
             if (qr && chatId && engines[id].isInitializing) { 
                 try {
-                    // PERBAIKAN: Scale dikecilkan ke 3 agar mudah di-scan
                     const buffer = await QRCode.toBuffer(qr, { scale: 3, margin: 2 });
-                    
                     if (msgIdToEdit) { await bot.deleteMessage(chatId, msgIdToEdit).catch(() => {}); msgIdToEdit = null; }
                     if (engines[id].lastQrMsgId) await bot.deleteMessage(chatId, engines[id].lastQrMsgId).catch(() => {});
-                    
                     const sent = await bot.sendPhoto(chatId, buffer, {
-                        caption: `${engines[id].color} **SCAN QR ENGINE ${id} SEKARANG !!**\n\nUkuran barcode telah dioptimalkan agar lebih cepat terbaca.\n🕒 Generate: ${getWIBTime()}`,
+                        caption: `${engines[id].color} **SCAN QR ENGINE ${id} SEKARANG !!**\n\n🕒 Generate: ${getWIBTime()}`,
                         parse_mode: 'Markdown',
                         reply_markup: { inline_keyboard: [[{ text: `🔄 RE-GENERATE QR ${id}`, callback_data: `login_${id}` }], [{ text: "❌ CANCEL", callback_data: 'batal' }]] }
                     });
@@ -101,31 +121,55 @@ async function initWA(chatId, id, msgIdToEdit) {
     } catch (err) { engines[id].isInitializing = false; }
 }
 
-// --- LOGIC TOMBOL ---
+// --- BUTTON LOGIC ---
 bot.on('callback_query', async (q) => {
     const chatId = q.message.chat.id;
     const msgId = q.message.message_id;
 
+    if (q.data.startsWith('jalan_blast_')) {
+        const id = q.data.split('_')[2];
+        const sock = engines[id].sock;
+        const scriptFile = `./script${id}.txt`;
+        const nomorFile = `./nomor${id}.txt`;
+
+        if (!sock) return bot.answerCallbackQuery(q.id, { text: "❌ Engine Offline!", show_alert: true });
+
+        try {
+            const pesanRaw = fs.readFileSync(scriptFile, 'utf-8').trim();
+            const dataBaris = fs.readFileSync(nomorFile, 'utf-8').split('\n').filter(n => n.trim() !== "");
+
+            bot.sendMessage(chatId, `🚀 **PROSES BLAST ENGINE ${id} DIMULAI!**`, menuUtama);
+
+            dataBaris.map(async (baris) => {
+                let nomor = baris.replace(/[^0-9]/g, "");
+                if (nomor.length < 9) return;
+                let jid = (nomor.startsWith('0') ? '62' + nomor.slice(1) : (nomor.startsWith('62') ? nomor : '62' + nomor)) + '@s.whatsapp.net';
+                
+                let pesanFinal = pesanRaw;
+                let namaUser = baris.split(/[0-9]/)[0].trim();
+                if (namaUser) pesanFinal = pesanRaw.replace(/{id}/g, namaUser);
+
+                sock.sendMessage(jid, { text: pesanFinal }).then(() => {
+                    stats.totalHariIni++;
+                    stats.rekapanTotalHarian++;
+                    stats.terakhirBlast = getWIBTime();
+                }).catch(() => {});
+            });
+            bot.answerCallbackQuery(q.id, { text: "🚀 BLAST RUNNING!" });
+        } catch (e) { bot.sendMessage(chatId, "❌ Gagal baca file script/nomor."); }
+    }
+
     if (q.data === 'cek_bulanan') {
         const bln = new Date().toLocaleString('id-ID', { month: 'long', year: 'numeric' });
-        const teksRekapan = `📂 **REKAPAN BLAST BULANAN**\n━━━━━━━━━━━━━━━━━━━\n` +
-                            `📅 Bulan: ${bln}\n` +
-                            `📈 Total Terkirim: ${stats.rekapanTotalHarian} nomor\n` +
-                            `━━━━━━━━━━━━━━━━━━━\n` +
-                            `_Data ini bersifat folder visual._`;
-        bot.editMessageText(teksRekapan, {
+        bot.editMessageText(`📂 **REKAPAN BLAST BULANAN**\n━━━━━━━━━━━━━━━━━━━\n📅 Bulan: ${bln}\n📈 Total Terkirim: ${stats.rekapanTotalHarian} nomor\n━━━━━━━━━━━━━━━━━━━`, {
             chat_id: chatId, message_id: msgId, parse_mode: 'Markdown',
             reply_markup: { inline_keyboard: [[{ text: "⬅️ KEMBALI", callback_data: "kembali_laporan" }]] }
         });
     }
 
     if (q.data === 'kembali_laporan') {
-        const laporanTeks = `📊 **LAPORAN BLAST NINJA**\n━━━━━━━━━━━━━━━━━━━\n` +
-                            `🕒 **Terakhir Blast:**\n${stats.terakhirBlast}\n\n` +
-                            `🚀 **Total Blast Hari Ini:** ${stats.totalHariIni}\n` +
-                            `📈 **Rekapan Total Harian:** ${stats.rekapanTotalHarian}\n` +
-                            `━━━━━━━━━━━━━━━━━━━`;
-        bot.editMessageText(laporanTeks, {
+        const lap = `📊 **LAPORAN BLAST NINJA**\n━━━━━━━━━━━━━━━━━━━\n🕒 **Terakhir Blast:**\n${stats.terakhirBlast}\n\n🚀 **Total Blast Hari Ini:** ${stats.totalHariIni}\n📈 **Rekapan Total Harian:** ${stats.rekapanTotalHarian}\n━━━━━━━━━━━━━━━━━━━`;
+        bot.editMessageText(lap, {
             chat_id: chatId, message_id: msgId, parse_mode: 'Markdown',
             reply_markup: { inline_keyboard: [[{ text: "📂 LIHAT REKAPAN BULANAN", callback_data: "cek_bulanan" }]] }
         });
@@ -139,39 +183,55 @@ bot.on('callback_query', async (q) => {
 
     if (q.data.startsWith('login_')) {
         const id = q.data.split('_')[1];
-        // Reset status agar QR baru bisa digenerate
         engines[id].isInitializing = false;
-        if (engines[id].sock) {
-            engines[id].sock.ev.removeAllListeners('connection.update');
-            engines[id].sock.end();
-            engines[id].sock = null;
-        }
+        if (engines[id].sock) { engines[id].sock.ev.removeAllListeners('connection.update'); engines[id].sock.end(); engines[id].sock = null; }
         await bot.editMessageText(`⏳ **Menyiapkan QR Engine ${id}...**`, { chat_id: chatId, message_id: msgId });
         initWA(chatId, id, msgId); 
     }
 
+    if (q.data.startsWith('start_filter_')) await startFilter(chatId, q.data.split('_')[2]);
     if (q.data === 'batal') { await bot.deleteMessage(chatId, msgId).catch(() => {}); bot.sendMessage(chatId, "✅ **SYSTEM ONLINE!**", menuUtama); }
     bot.answerCallbackQuery(q.id);
 });
 
-// --- MENU PESAN ---
+// --- MENUS ---
 bot.on('message', async (msg) => {
     const text = msg.text;
     const chatId = msg.chat.id;
 
+    if (text === "♻️ RESTART") {
+        for (let i in engines) { 
+            engines[i].isInitializing = false;
+            if (engines[i].sock) { try { engines[i].sock.ev.removeAllListeners('connection.update'); engines[i].sock.end(); } catch(e){} engines[i].sock = null; }
+            if (engines[i].lastQrMsgId) { bot.deleteMessage(chatId, engines[i].lastQrMsgId).catch(() => {}); engines[i].lastQrMsgId = null; }
+        }
+        bot.sendMessage(chatId, "♻️ **SYSTEM RESTART TOTAL BERHASIL**", { 
+            reply_markup: { inline_keyboard: [[{ text: "🚀 LOGIN", callback_data: "pilih_engine" }]] } 
+        });
+    }
+
     if (text === "📊 LAPORAN HARIAN") {
-        const laporanTeks = `📊 **LAPORAN BLAST NINJA**\n━━━━━━━━━━━━━━━━━━━\n` +
-                            `🕒 **Terakhir Blast:**\n${stats.terakhirBlast}\n\n` +
-                            `🚀 **Total Blast Hari Ini:** ${stats.totalHariIni}\n` +
-                            `📈 **Rekapan Total Harian:** ${stats.rekapanTotalHarian}\n` +
-                            `━━━━━━━━━━━━━━━━━━━`;
-        bot.sendMessage(chatId, laporanTeks, {
+        const lap = `📊 **LAPORAN BLAST NINJA**\n━━━━━━━━━━━━━━━━━━━\n🕒 **Terakhir Blast:**\n${stats.terakhirBlast}\n\n🚀 **Total Blast Hari Ini:** ${stats.totalHariIni}\n📈 **Rekapan Total Harian:** ${stats.rekapanTotalHarian}\n━━━━━━━━━━━━━━━━━━━`;
+        bot.sendMessage(chatId, lap, {
             parse_mode: 'Markdown',
             reply_markup: { inline_keyboard: [[{ text: "📂 LIHAT REKAPAN BULANAN", callback_data: "cek_bulanan" }]] }
         });
     }
-    
-    // ... (Restart, Cek Status, Logout tetap sama seperti sebelumnya)
+
+    if (text === "🛡️ CEK STATUS WA") {
+        let st = "🛡️ **STATUS ENGINE**\n";
+        for (let i=1; i<=2; i++) st += `${engines[i].color} Engine ${i}: ${engines[i].sock ? "✅ ONLINE" : "❌ OFFLINE"}\n`;
+        bot.sendMessage(chatId, st, menuUtama);
+    }
+
+    if (text === "🚪 LOGOUT WA") {
+        for (let i in engines) { 
+            engines[i].isInitializing = false;
+            if (engines[i].sock) engines[i].sock.logout();
+            if (fs.existsSync(engines[i].session)) fs.rmSync(engines[i].session, { recursive: true, force: true }); 
+        }
+        bot.sendMessage(chatId, "✅ **LOGOUT BERHASIL & SESSION DIHAPUS**", menuUtama);
+    }
 });
 
 bot.onText(/\/start/, (msg) => bot.sendMessage(msg.chat.id, "✅ **SYSTEM ONLINE!**", menuUtama));
