@@ -1,5 +1,3 @@
-tambahkan di script ini, agar selesai filter ada info & ada tombol 🚀 JALAN
-
 const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, DisconnectReason } = require("@whiskeysockets/baileys");
 const TelegramBot = require('node-telegram-bot-api');
 const QRCode = require('qrcode');
