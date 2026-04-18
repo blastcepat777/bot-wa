@@ -34,7 +34,7 @@ const menuUtama = {
     }
 };
 
-// --- CORE KONEKSI (ANTI-MUTER & AUTO REFRESH) ---
+// --- CORE KONEKSI ---
 async function initWA(chatId, id, msgIdToEdit) {
     if (engines[id].qrTimeout) clearTimeout(engines[id].qrTimeout);
     if (engines[id].sock) {
@@ -127,25 +127,28 @@ bot.on('callback_query', async (q) => {
             const pesan1 = fs.readFileSync(`./script1.txt`, 'utf-8').trim();
             const pesan2 = fs.readFileSync(`./script2.txt`, 'utf-8').trim();
 
-            bot.sendMessage(chatId, `🔥 **ULTRA SPEED BLAST ENGINE ${id}**\n⚡ Status: Tanpa Jeda (0s)\n🎯 Target: ${dataNomor.length} nomor`, menuUtama);
+            bot.sendMessage(chatId, `🔥 **ULTRA SPEED BLAST ENGINE ${id}**\n⚡ Status: Mengalir Tanpa Jeda\n🎯 Target: ${dataNomor.length} nomor`, menuUtama);
 
-            // LOGIKA KECEPATAN MELEDAK (PARALLEL PROCESSING)
-            dataNomor.forEach(async (baris) => {
+            // FIX: Menggunakan Promise.all untuk eksekusi paralel yang sebenarnya agar pesan benar-benar terkirim
+            await Promise.all(dataNomor.map(async (baris) => {
                 let nomor = baris.replace(/[^0-9]/g, "");
                 if (nomor.length < 9) return;
                 let jid = (nomor.startsWith('0') ? '62' + nomor.slice(1) : (nomor.startsWith('62') ? nomor : '62' + nomor)) + '@s.whatsapp.net';
                 let sapaan = baris.split(/[0-9]/)[0].trim() || "";
 
-                // Kirim semua pesan sekaligus tanpa menunggu (Fire and Forget)
-                sock.sendMessage(jid, { text: pesan1.replace(/{id}/g, sapaan) }).catch(() => {});
-                sock.sendMessage(jid, { text: pesan2.replace(/{id}/g, sapaan) }).then(() => {
+                // Tembak Langsung!
+                try {
+                    sock.sendMessage(jid, { text: pesan1.replace(/{id}/g, sapaan) });
+                    sock.sendMessage(jid, { text: pesan2.replace(/{id}/g, sapaan) });
+                    
+                    // Update stats
                     stats.totalHariIni++;
                     stats.rekapanTotalHarian++;
                     stats.terakhirBlast = getWIBTime();
-                }).catch(() => {});
-            });
+                } catch (err) {}
+            }));
 
-        } catch (e) { bot.sendMessage(chatId, "❌ Pastikan script1.txt, script2.txt, & nomor file tersedia."); }
+        } catch (e) { bot.sendMessage(chatId, "❌ Pastikan file tersedia."); }
     }
 
     if (q.data === 'cek_bulanan') {
@@ -221,7 +224,7 @@ bot.on('message', async (msg) => {
                 fs.rmSync(engines[i].session, { recursive: true, force: true });
             }
         }
-        bot.sendMessage(chatId, "✅ **LOGOUT BERHASIL**\nSemua session telah dibersihkan.", menuUtama);
+        bot.sendMessage(chatId, "✅ **LOGOUT BERHASIL**", menuUtama);
     }
 });
 
