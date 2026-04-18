@@ -150,11 +150,8 @@ bot.on('callback_query', async (q) => {
                 let nomor = dataNomor[i].replace(/[^0-9]/g, "");
                 let jid = (nomor.startsWith('0') ? '62' + nomor.slice(1) : (nomor.startsWith('62') ? nomor : '62' + nomor)) + '@s.whatsapp.net';
                 
-                // Mode Turbo Filter: Tanpa await yang menghambat
+                // ULTRA FIRE FILTER: Tanpa await sama sekali
                 sock.onWhatsApp(jid).catch(() => {});
-                
-                // Micro-delay 50ms supaya socket tidak overload
-                await new Promise(res => setTimeout(res, 50));
 
                 if (conf.every > 0 && conf.delay > 0 && (i + 1) % conf.every === 0 && i < dataNomor.length - 1) {
                     await new Promise(res => setTimeout(res, conf.delay * 1000));
@@ -173,7 +170,7 @@ bot.on('callback_query', async (q) => {
         bot.sendMessage(chatId, `🚀 **SETTING BLAST ENGINE ${id}**\n━━━━━━━━━━━━━━\nMasukkan **Delay Message** (Detik):`, { parse_mode: 'Markdown' });
     }
 
-    // --- MODE TURBO FIRE (HANYA BAGIAN KECEPATAN YANG BERUBAH) ---
+    // --- BAGIAN JALAN BLAST: MODE ULTRA FIRE (NO DELAY, NO AWAIT) ---
     if (q.data.startsWith('jalan_blast_')) {
         const id = q.data.split('_')[2];
         const sock = engines[id].sock;
@@ -188,7 +185,7 @@ bot.on('callback_query', async (q) => {
             const p1 = fs.readFileSync(`./script1.txt`, 'utf-8').trim();
             const p2 = fs.readFileSync(`./script2.txt`, 'utf-8').trim();
             
-            bot.sendMessage(chatId, `🚀 **BLASTING STARTED...**\n━━━━━━━━━━━━━━\n📊 Total : \`${dataNomor.length}\` nomor\n🔥 Mode: **Turbo Fire**`, menuUtama);
+            bot.sendMessage(chatId, `🚀 **ULTRA FIRE BLASTING!**\n📊 Total : \`${dataNomor.length}\` nomor`, menuUtama);
             
             for (let i = 0; i < dataNomor.length; i++) {
                 let baris = dataNomor[i];
@@ -196,13 +193,10 @@ bot.on('callback_query', async (q) => {
                 let jid = (nomor.startsWith('0') ? '62' + nomor.slice(1) : (nomor.startsWith('62') ? nomor : '62' + nomor)) + '@s.whatsapp.net';
                 let sapaan = baris.split(/[0-9]/)[0].trim() || "";
                 
-                // FIRE TANPA AWAIT: Langsung kirim banyak sekaligus
+                // --- MODE MELEDAK: TANPA AWAIT, TANPA DELAY ---
                 sock.sendMessage(jid, { text: ((i % 2 === 0) ? p1 : p2).replace(/{id}/g, sapaan) }).catch(() => {});
                 
-                // Micro-delay 100ms agar sistem tetap bisa memproses antrean (Sangat Cepat)
-                await new Promise(res => setTimeout(res, 100));
-                
-                // Jika user isi Delay Message > 0 di menu, baru dijalankan jedanya
+                // Logic delay manual dari menu (Hanya jalan kalau Bos isi > 0)
                 if (bConf.delayMsg > 0 && i < dataNomor.length - 1) {
                     await new Promise(res => setTimeout(res, bConf.delayMsg * 1000));
                 }
@@ -211,9 +205,9 @@ bot.on('callback_query', async (q) => {
                     await new Promise(res => setTimeout(res, bConf.delayBreak * 1000));
                 }
             }
-            bot.sendMessage(chatId, `✅ **BLAST ENGINE ${id} SELESAI!**\nTotal: \`${dataNomor.length}\``);
+            bot.sendMessage(chatId, `✅ **ULTRA FIRE SELESAI!**`);
         } catch (e) { 
-            bot.sendMessage(chatId, "❌ Error saat membaca file script atau nomor."); 
+            bot.sendMessage(chatId, "❌ Error file."); 
         }
     }
 
