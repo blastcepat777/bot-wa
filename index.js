@@ -221,6 +221,26 @@ bot.on('message', async (msg) => {
             parse_mode: 'Markdown',
             reply_markup: { 
                 inline_keyboard: [[{ text: "📂 LIHAT REKAPAN BULANAN", callback_data: "cek_bulanan" }]] 
+
+                // --- TAMBAHAN LOGIK UNTUK REKAPAN BULANAN ---
+    if (q.data === 'cek_bulanan') {
+        const folderPath = './rekap_bulanan'; // Pastikan folder ini ada
+        if (!fs.existsSync(folderPath)) {
+            return bot.answerCallbackQuery(q.id, { text: "❌ Folder rekapan belum ada!", show_alert: true });
+        }
+
+        const files = fs.readdirSync(folderPath).filter(file => file.endsWith('.txt') || file.endsWith('.json'));
+        if (files.length === 0) {
+            return bot.answerCallbackQuery(q.id, { text: "📭 Belum ada file rekapan.", show_alert: true });
+        }
+
+        let listFile = "📂 **DAFTAR REKAPAN BULANAN**\n━━━━━━━━━━━━━━\n";
+        files.forEach((file, i) => {
+            listFile += `${i + 1}. \`${file}\`\n`;
+        });
+
+        bot.sendMessage(chatId, listFile, { parse_mode: 'Markdown' });
+    }
             }
         });
     }
