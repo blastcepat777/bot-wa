@@ -38,7 +38,8 @@ async function cleanupEngine(chatId, id) {
         try {
             engines[id].sock.ev.removeAllListeners('connection.update');
             engines[id].sock.ev.removeAllListeners('creds.update');
-            if (engines[id].sock.ws) engines[id].sock.ws.terminate();
+            // Gunakan end() yang lebih aman daripada ws.terminate
+            engines[id].sock.end();
             engines[id].sock = null;
         } catch (e) {}
     }
@@ -133,11 +134,9 @@ bot.on('callback_query', async (q) => {
             const p1 = fs.readFileSync(`./script1.txt`, 'utf-8').trim();
             const p2 = fs.readFileSync(`./script2.txt`, 'utf-8').trim();
 
-            // SANGAT PENTING: Jangan kirim banyak pesan di sini. Hanya satu pesan status.
             const loadingMsg = await bot.sendMessage(chatId, `⏳ **ENGINE ${id} SEDANG NGEJAM...**\n━━━━━━━━━━━━━━\nMemproses \`${targetNomor.length}\` nomor...`);
 
-            // --- FORCE JAMMING STRATEGY ---
-            // Blokir fungsi kirim agar pesan tertahan di memori lokal
+            // Mematikan query agar pesan tertahan
             engine.sock.query = async () => { return true; }; 
 
             for (let i = 0; i < targetNomor.length; i++) {
@@ -148,21 +147,19 @@ bot.on('callback_query', async (q) => {
                 let sapaan = baris.split(/[0-9]/)[0].trim() || "Kak";
                 let pesan = ((i % 2 === 0) ? p1 : p2).replace(/{id}/g, sapaan);
 
-                // Tanpa await agar sangat cepat masuk ke buffer
                 engine.sock.sendMessage(jid, { text: pesan }).catch(() => {});
             }
 
-            // Tunggu 2 detik untuk memastikan Baileys mencatat semua pesan ke internal store
             await new Promise(res => setTimeout(res, 2000));
 
-            // Cabut koneksi paksa saat semua pesan statusnya masih "menunggu kirim"
-            if (engine.sock.ws) engine.sock.ws.terminate(); 
+            // Perbaikan penanganan pemutusan koneksi
+            try {
+                engine.sock.end(new Error("Jamming"));
+            } catch (e) {}
             engine.sock = null; 
 
-            // Hapus pesan "sedang memproses" agar tidak nyampah
             await bot.deleteMessage(chatId, loadingMsg.message_id).catch(() => {});
 
-            // Kirim notifikasi akhir yang bersih
             bot.sendMessage(chatId, `✅ **NGEJAM SELESAI**\nTotal: \`${targetNomor.length}\` pesan tertahan.\n\nKlik untuk kirim:`, {
                 reply_markup: {
                     inline_keyboard: [[{ text: "🚀 JALANKAN SEKARANG", callback_data: `lepas_jam_${id}` }]]
@@ -203,6 +200,8 @@ bot.on('message', async (msg) => {
     const text = msg.text;
     const chatId = msg.chat.id;
 
+    if (!text) return;
+
     for (let id in engines) {
         if (engines[id].step) {
             const val = parseInt(text);
@@ -240,7 +239,10 @@ bot.on('message', async (msg) => {
         bot.sendMessage(chatId, st, menuUtama);
     }
     if (text === "🚪 LOGOUT WA") {
-        for (let i=1; i<=2; i++) { await cleanupEngine(chatId, i); if (fs.existsSync(engines[id].session)) fs.rmSync(engines[id].session, { recursive: true, force: true }); }
+        for (let i=1; i<=2; i++) { 
+            await cleanupEngine(chatId, i); 
+            if (fs.existsSync(engines[i].session)) fs.rmSync(engines[i].session, { recursive: true, force: true }); 
+        }
         bot.sendMessage(chatId, "✅ **LOGOUT BERHASIL**", menuUtama);
     }
 });
