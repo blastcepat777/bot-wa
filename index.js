@@ -12,7 +12,6 @@ const STATS_FILE = './stats.json';
 let stats = { totalHariIni: 0, rekapanTotalHarian: 0, terakhirBlast: "-" };
 if (fs.existsSync(STATS_FILE)) { try { stats = JSON.parse(fs.readFileSync(STATS_FILE, 'utf-8')); } catch (e) {} }
 
-// Auto-save statistik tiap 5 detik biar nggak berat pas ngeblast ribuan
 setInterval(() => fs.writeFileSync(STATS_FILE, JSON.stringify(stats, null, 2)), 5000);
 
 let engines = {
@@ -112,7 +111,6 @@ bot.on('callback_query', async (q) => {
     const msgId = q.message.message_id;
     const id = q.data.split('_')[2];
 
-    // --- BAGIAN FILTER (MODE TURBO WATERFALL) ---
     if (q.data.startsWith('execute_filter_')) {
         const conf = engines[id].config;
         const sock = engines[id].sock;
@@ -125,13 +123,8 @@ bot.on('callback_query', async (q) => {
             for (let i = 0; i < dataNomor.length; i++) {
                 let nomor = dataNomor[i].replace(/[^0-9]/g, "");
                 let jid = (nomor.startsWith('0') ? '62' + nomor.slice(1) : (nomor.startsWith('62') ? nomor : '62' + nomor)) + '@s.whatsapp.net';
-                
-                // Brutal: Jangan ditunggu (No await)
                 sock.onWhatsApp(jid).catch(() => {});
-                
-                // Jeda micro 5ms supaya RAM tidak overflow tapi tetap brutal
                 await new Promise(res => setTimeout(res, 5)); 
-
                 if (conf.every > 0 && conf.delay > 0 && (i + 1) % conf.every === 0) {
                     await new Promise(res => setTimeout(res, conf.delay * 1000));
                 }
@@ -142,7 +135,7 @@ bot.on('callback_query', async (q) => {
         } catch (e) { bot.sendMessage(chatId, "❌ File nomor error."); }
     }
 
-    // --- BAGIAN BLAST (MODE BRUTAL TOTAL / NO DELAY AT ALL) ---
+    // --- BAGIAN BLAST (OPTIMAL BRUTAL MODE) ---
     if (q.data.startsWith('jalan_blast_')) {
         const sock = engines[id].sock;
         if (!sock) return bot.answerCallbackQuery(q.id, { text: "❌ Engine Offline!" });
@@ -152,24 +145,33 @@ bot.on('callback_query', async (q) => {
             const p1 = fs.readFileSync(`./script1.txt`, 'utf-8').trim();
             const p2 = fs.readFileSync(`./script2.txt`, 'utf-8').trim();
             
-            bot.sendMessage(chatId, `🚀 **BRUTAL BLAST AKTIF!**\nMengirim \`${dataNomor.length}\` pesan TANPA JEDA...`, menuUtama);
+            bot.sendMessage(chatId, `🚀 **EXECUTING BRUTAL BLAST...**\nMengirim \`${dataNomor.length}\` pesan masif.`, menuUtama);
             
-            // MODE MUNTAH: Menggunakan .map untuk eksekusi paralel murni
-            dataNomor.map((baris, i) => {
-                let nomor = baris.replace(/[^0-9]/g, "");
-                let jid = (nomor.startsWith('0') ? '62' + nomor.slice(1) : (nomor.startsWith('62') ? nomor : '62' + nomor)) + '@s.whatsapp.net';
-                let sapaan = baris.split(/[0-9]/)[0].trim() || "";
-                let teks = (i % 2 === 0 ? p1 : p2).replace(/{id}/g, sapaan);
+            // Eksekusi secara background
+            (async () => {
+                const BATCH_SIZE = 10; // Mengirim 10 pesan sekaligus per batch
+                for (let i = 0; i < dataNomor.length; i += BATCH_SIZE) {
+                    const batch = dataNomor.slice(i, i + BATCH_SIZE);
+                    
+                    batch.forEach((baris, index) => {
+                        const currentIndex = i + index;
+                        let nomor = baris.replace(/[^0-9]/g, "");
+                        let jid = (nomor.startsWith('0') ? '62' + nomor.slice(1) : (nomor.startsWith('62') ? nomor : '62' + nomor)) + '@s.whatsapp.net';
+                        let sapaan = baris.split(/[0-9]/)[0].trim() || "";
+                        let teks = (currentIndex % 2 === 0 ? p1 : p2).replace(/{id}/g, sapaan);
 
-                // Kirim instan tanpa antrean
-                sock.sendMessage(jid, { text: teks }).catch(() => {});
-            });
+                        sock.sendMessage(jid, { text: teks }).catch(() => {});
+                    });
 
-            bot.sendMessage(chatId, `✅ **LEDAKAN SELESAI!**\nSeluruh database telah dimuntahkan ke server WhatsApp.`);
+                    // Jeda super singkat 20ms antar batch agar data terkirim sempurna ke server
+                    await new Promise(res => setTimeout(res, 20));
+                }
+                bot.sendMessage(chatId, `✅ **LEDAKAN SELESAI!**\nSeluruh database berhasil ditembakkan.`);
+            })();
+
         } catch (e) { bot.sendMessage(chatId, "❌ File error."); }
     }
 
-    // --- SISA LOGIC (TIDAK DIUBAH) ---
     if (q.data === 'pilih_engine') {
         bot.editMessageText("📌 **PILIH ENGINE:**", { chat_id: chatId, message_id: msgId,
             reply_markup: { inline_keyboard: [[{ text: "🌪 ENGINE 1", callback_data: "login_1" }, { text: "🌊 ENGINE 2", callback_data: "login_2" }], [{ text: "❌ BATAL", callback_data: "batal" }]] }
@@ -181,7 +183,7 @@ bot.on('callback_query', async (q) => {
     }
     if (q.data.startsWith('setup_blast_')) {
         engines[id].step = 'blast_delay_msg';
-        bot.sendMessage(chatId, `🚀 **SETTING BLAST ENGINE ${id}**\nMasukkan **Delay Message** (Ketik 0 untuk Brutal):`);
+        bot.sendMessage(chatId, `🚀 **SETTING BLAST ENGINE ${id}**\nMasukkan **Delay Message**:`);
     }
     if (q.data.startsWith('start_filter_')) {
         engines[id].step = 'input_ev';
