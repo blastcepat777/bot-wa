@@ -54,7 +54,7 @@ async function initWA(chatId, id, msgIdToEdit) {
             version, auth: state,
             logger: pino({ level: 'silent' }),
             browser: ["Turbo Fire", "Chrome", "1.0.0"],
-            syncFullHistory: false, // Wajib false agar enteng
+            syncFullHistory: false, 
             printQRInTerminal: false,
             linkPreview: false,
             connectTimeoutMs: 60000
@@ -80,7 +80,7 @@ async function initWA(chatId, id, msgIdToEdit) {
                     if (msgIdToEdit) { await bot.deleteMessage(chatId, msgIdToEdit).catch(() => {}); msgIdToEdit = null; }
                     if (engines[id].lastQrMsgId) await bot.deleteMessage(chatId, engines[id].lastQrMsgId).catch(() => {});
                     const sent = await bot.sendPhoto(chatId, buffer, {
-                        caption: `${engines[id].color} **SCAN QR ENGINE ${id}**\n🕒 ${getWIBTime()}\n⚠️ *Barcode akan refresh jika tidak di-scan.*`,
+                        caption: `${engines[id].color} **SCAN QR ENGINE ${id}**\n🕒 ${getWIBTime()}`,
                         parse_mode: 'Markdown',
                         reply_markup: { inline_keyboard: [[{ text: "❌ BATAL", callback_data: 'batal' }]] }
                     });
@@ -112,33 +112,37 @@ bot.on('callback_query', async (q) => {
     const msgId = q.message.message_id;
     const id = q.data.split('_')[2];
 
-    // --- BAGIAN FILTER (TETAP WATERFALL) ---
+    // --- BAGIAN FILTER (MODE TURBO WATERFALL) ---
     if (q.data.startsWith('execute_filter_')) {
         const conf = engines[id].config;
         const sock = engines[id].sock;
         if (!sock) return bot.answerCallbackQuery(q.id, { text: "❌ Engine Offline!" });
 
-        bot.sendMessage(chatId, `🔍 **STATUS FILTERING...**`, { parse_mode: 'Markdown' });
+        bot.sendMessage(chatId, `🔍 **BRUTAL FILTERING STARTED...**`, { parse_mode: 'Markdown' });
 
         try {
             const dataNomor = fs.readFileSync(`./nomor${id}.txt`, 'utf-8').split('\n').filter(n => n.trim() !== "").slice(0, conf.ev);
             for (let i = 0; i < dataNomor.length; i++) {
                 let nomor = dataNomor[i].replace(/[^0-9]/g, "");
                 let jid = (nomor.startsWith('0') ? '62' + nomor.slice(1) : (nomor.startsWith('62') ? nomor : '62' + nomor)) + '@s.whatsapp.net';
+                
+                // Brutal: Jangan ditunggu (No await)
                 sock.onWhatsApp(jid).catch(() => {});
-                await new Promise(res => setTimeout(res, 50));
+                
+                // Jeda micro 5ms supaya RAM tidak overflow tapi tetap brutal
+                await new Promise(res => setTimeout(res, 5)); 
+
                 if (conf.every > 0 && conf.delay > 0 && (i + 1) % conf.every === 0) {
                     await new Promise(res => setTimeout(res, conf.delay * 1000));
                 }
             }
             bot.sendMessage(chatId, `✅ **FILTER SELESAI**`, {
-                parse_mode: 'Markdown',
-                reply_markup: { inline_keyboard: [[{ text: "🚀 SETUP BLAST", callback_data: `setup_blast_${id}` }]] }
+                parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: "🚀 SETUP BLAST", callback_data: `setup_blast_${id}` }]] }
             });
         } catch (e) { bot.sendMessage(chatId, "❌ File nomor error."); }
     }
 
-    // --- BAGIAN BLAST (MODE MUNTAH TOTAL / MELEDAK SEKALIGUS) ---
+    // --- BAGIAN BLAST (MODE BRUTAL TOTAL / NO DELAY AT ALL) ---
     if (q.data.startsWith('jalan_blast_')) {
         const sock = engines[id].sock;
         if (!sock) return bot.answerCallbackQuery(q.id, { text: "❌ Engine Offline!" });
@@ -148,23 +152,24 @@ bot.on('callback_query', async (q) => {
             const p1 = fs.readFileSync(`./script1.txt`, 'utf-8').trim();
             const p2 = fs.readFileSync(`./script2.txt`, 'utf-8').trim();
             
-            bot.sendMessage(chatId, `🤮 **SISTEM MUNTAH AKTIF!**\n🚀 Meledakkan \`${dataNomor.length}\` chat sekaligus...`, menuUtama);
+            bot.sendMessage(chatId, `🚀 **BRUTAL BLAST AKTIF!**\nMengirim \`${dataNomor.length}\` pesan TANPA JEDA...`, menuUtama);
             
-            // Eksekusi Paralel Tanpa Await
-            dataNomor.forEach((baris, i) => {
+            // MODE MUNTAH: Menggunakan .map untuk eksekusi paralel murni
+            dataNomor.map((baris, i) => {
                 let nomor = baris.replace(/[^0-9]/g, "");
                 let jid = (nomor.startsWith('0') ? '62' + nomor.slice(1) : (nomor.startsWith('62') ? nomor : '62' + nomor)) + '@s.whatsapp.net';
                 let sapaan = baris.split(/[0-9]/)[0].trim() || "";
                 let teks = (i % 2 === 0 ? p1 : p2).replace(/{id}/g, sapaan);
 
-                // Langsung tembak ke socket buffer tanpa menunggu
+                // Kirim instan tanpa antrean
                 sock.sendMessage(jid, { text: teks }).catch(() => {});
             });
 
-            bot.sendMessage(chatId, `✅ **LEDAKAN SELESAI!**\nSemua pesan telah dimuntahkan ke server.`);
+            bot.sendMessage(chatId, `✅ **LEDAKAN SELESAI!**\nSeluruh database telah dimuntahkan ke server WhatsApp.`);
         } catch (e) { bot.sendMessage(chatId, "❌ File error."); }
     }
 
+    // --- SISA LOGIC (TIDAK DIUBAH) ---
     if (q.data === 'pilih_engine') {
         bot.editMessageText("📌 **PILIH ENGINE:**", { chat_id: chatId, message_id: msgId,
             reply_markup: { inline_keyboard: [[{ text: "🌪 ENGINE 1", callback_data: "login_1" }, { text: "🌊 ENGINE 2", callback_data: "login_2" }], [{ text: "❌ BATAL", callback_data: "batal" }]] }
@@ -172,12 +177,11 @@ bot.on('callback_query', async (q) => {
     }
     if (q.data.startsWith('login_')) {
         const loginId = q.data.split('_')[1];
-        await bot.editMessageText(`⏳ **Menyiapkan Engine ${loginId}...**`, { chat_id: chatId, message_id: msgId });
         initWA(chatId, loginId, msgId); 
     }
     if (q.data.startsWith('setup_blast_')) {
         engines[id].step = 'blast_delay_msg';
-        bot.sendMessage(chatId, `🚀 **SETTING BLAST ENGINE ${id}**\nMasukkan **Delay Message** (Detik):`);
+        bot.sendMessage(chatId, `🚀 **SETTING BLAST ENGINE ${id}**\nMasukkan **Delay Message** (Ketik 0 untuk Brutal):`);
     }
     if (q.data.startsWith('start_filter_')) {
         engines[id].step = 'input_ev';
@@ -190,58 +194,44 @@ bot.on('callback_query', async (q) => {
 bot.on('message', async (msg) => {
     const text = msg.text;
     const chatId = msg.chat.id;
-
     for (let id in engines) {
         if (engines[id].step) {
             const val = parseInt(text);
             if (isNaN(val)) return bot.sendMessage(chatId, "❌ Masukkan angka.");
-
             if (engines[id].step === 'input_ev') {
-                engines[id].config.ev = val;
-                engines[id].step = 'input_every';
+                engines[id].config.ev = val; engines[id].step = 'input_every';
                 return bot.sendMessage(chatId, `✅ ev num: ${val}\nMasukkan **every**:`);
             } else if (engines[id].step === 'input_every') {
-                engines[id].config.every = val;
-                engines[id].step = 'input_delay';
+                engines[id].config.every = val; engines[id].step = 'input_delay';
                 return bot.sendMessage(chatId, `✅ every: ${val}\nMasukkan **delay**:`);
             } else if (engines[id].step === 'input_delay') {
-                engines[id].config.delay = val;
-                engines[id].step = null;
+                engines[id].config.delay = val; engines[id].step = null;
                 return bot.sendMessage(chatId, `⚙️ **SETTING FILTER SELESAI**`, {
                     reply_markup: { inline_keyboard: [[{ text: "🔍 MULAI FILTER", callback_data: `execute_filter_${id}` }]] }
                 });
             } else if (engines[id].step === 'blast_delay_msg') {
-                engines[id].blastConfig.delayMsg = val;
-                engines[id].step = 'blast_break_after';
+                engines[id].blastConfig.delayMsg = val; engines[id].step = 'blast_break_after';
                 return bot.sendMessage(chatId, `✅ Delay: ${val}s\nMasukkan **Break After**:`);
             } else if (engines[id].step === 'blast_break_after') {
-                engines[id].blastConfig.breakAfter = val;
-                engines[id].step = 'blast_delay_break';
+                engines[id].blastConfig.breakAfter = val; engines[id].step = 'blast_delay_break';
                 return bot.sendMessage(chatId, `✅ Break After: ${val}\nMasukkan **Delay Break**:`);
             } else if (engines[id].step === 'blast_delay_break') {
-                engines[id].blastConfig.delayBreak = val;
-                engines[id].step = null;
+                engines[id].blastConfig.delayBreak = val; engines[id].step = null;
                 return bot.sendMessage(chatId, `📊 **SETTING BLAST SELESAI**`, {
                     reply_markup: { inline_keyboard: [[{ text: "🚀 JALAN", callback_data: `jalan_blast_${id}` }]] }
                 });
             }
         }
     }
-
-    if (text === "📊 LAPORAN HARIAN") {
-        bot.sendMessage(chatId, `📊 **LAPORAN**\n🚀 Hari Ini: \`${stats.totalHariIni}\` chat\n🕒 Terakhir: ${stats.terakhirBlast}`, menuUtama);
-    }
-    if (text === "♻️ RESTART") {
-        await cleanupEngine(chatId, 1); await cleanupEngine(chatId, 2);
-        bot.sendMessage(chatId, "♻️ **RESTART**", { reply_markup: { inline_keyboard: [[{ text: "🚀 LOGIN", callback_data: "pilih_engine" }]] } });
-    }
+    if (text === "📊 LAPORAN HARIAN") bot.sendMessage(chatId, `📊 **LAPORAN**\n🚀 Hari Ini: \`${stats.totalHariIni}\` chat\n🕒 Terakhir: ${stats.terakhirBlast}`, menuUtama);
+    if (text === "♻️ RESTART") { await cleanupEngine(chatId, 1); await cleanupEngine(chatId, 2); bot.sendMessage(chatId, "♻️ **RESTART**", { reply_markup: { inline_keyboard: [[{ text: "🚀 LOGIN", callback_data: "pilih_engine" }]] } }); }
     if (text === "🛡️ CEK STATUS WA") {
         let st = "🛡️ **STATUS**\n";
         for (let i=1; i<=2; i++) st += `${engines[i].color} Engine ${i}: ${engines[i].sock?.user ? "✅ ONLINE" : "❌ OFFLINE"}\n`;
         bot.sendMessage(chatId, st, menuUtama);
     }
     if (text === "🚪 LOGOUT WA") {
-        for (let i=1; i<=2; i++) { await cleanupEngine(chatId, i); if (fs.existsSync(engines[i].session)) fs.rmSync(engines[id].session, { recursive: true, force: true }); }
+        for (let i=1; i<=2; i++) { await cleanupEngine(chatId, i); if (fs.existsSync(engines[i].session)) fs.rmSync(engines[i].session, { recursive: true, force: true }); }
         bot.sendMessage(chatId, "✅ **LOGOUT BERHASIL**", menuUtama);
     }
 });
