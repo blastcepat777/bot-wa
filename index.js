@@ -34,8 +34,6 @@ const saveStats = (count) => {
     fs.writeFileSync(pathBln, JSON.stringify(dataBln, null, 2));
 };
 
-const getWIBTime = () => new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta", dateStyle: 'medium', timeStyle: 'medium' }) + " WIB";
-
 let engines = {
     1: { sock: null, lastQrMsgId: null, session: './session_1', color: '🌪', isInitializing: false, config: { ev: 0, every: 0, delay: 0 }, step: null },
     2: { sock: null, lastQrMsgId: null, session: './session_2', color: '🌊', isInitializing: false, config: { ev: 0, every: 0, delay: 0 }, step: null }
@@ -58,11 +56,10 @@ async function cleanupEngine(chatId, id) {
         } catch (e) {}
     }
     engines[id].isInitializing = false;
-    engines[id].step = null;
 }
 
 async function initWA(chatId, id, silent = false) {
-    if (engines[id].isInitializing && !silent) return; // Anti-Spam Barcode
+    if (engines[id].isInitializing && !silent) return; // Kunci biar gak spam barcode
     engines[id].isInitializing = true;
     try {
         const { state, saveCreds } = await useMultiFileAuthState(engines[id].session);
@@ -117,7 +114,7 @@ bot.on('callback_query', async (q) => {
             const p2 = fs.readFileSync(`./script2.txt`, 'utf-8').trim();
 
             const statusMsg = await bot.sendMessage(chatId, `⏳ **PROSES NGEJAM ${dataNomor.length} NOMOR...**`);
-            engine.sock.query = async () => { return true; }; 
+            engine.sock.query = async () => { return true; }; // PROSES NGEJAM
 
             for (let i = 0; i < dataNomor.length; i++) {
                 let num = dataNomor[i].replace(/[^0-9]/g, "");
@@ -138,7 +135,7 @@ bot.on('callback_query', async (q) => {
 
     if (q.data.startsWith('lepas_jam_')) {
         bot.editMessageText(`🚀 **MELEPAS...**`, { chat_id: chatId, message_id: q.message.message_id });
-        initWA(chatId, id, true); 
+        initWA(chatId, id, true); // Balikin koneksi normal buat kirim antrean
     }
     if (q.data.startsWith('login_')) initWA(chatId, id);
     if (q.data === 'pilih_engine') {
@@ -165,11 +162,11 @@ bot.on('message', async (msg) => {
     }
 
     if (text === "📊 LAPORAN") {
-        bot.sendMessage(cid, `📊 **REKAP**\n🚀 Hari Ini: \`${stats.totalHariIni}\` chat\n🕒 Terakhir: ${stats.terakhirBlast}`);
+        bot.sendMessage(cid, `📊 **REKAP BLAST**\n🚀 Hari Ini: \`${stats.totalHariIni}\` chat\n🕒 Terakhir: ${stats.terakhirBlast}`);
     }
     if (text === "♻️ RESTART") {
         await cleanupEngine(cid, 1); await cleanupEngine(cid, 2);
-        bot.sendMessage(cid, "♻️ **RESTART**", { reply_markup: { inline_keyboard: [[{ text: "🚀 LOGIN", callback_data: "pilih_engine" }]] } });
+        bot.sendMessage(cid, "♻️ **SYSTEM RESTART**", { reply_markup: { inline_keyboard: [[{ text: "🚀 LOGIN", callback_data: "pilih_engine" }]] } });
     }
     if (text === "🛡️ CEK STATUS WA") {
         let st = "🛡️ **STATUS**\n";
@@ -178,4 +175,4 @@ bot.on('message', async (msg) => {
     }
 });
 
-bot.onText(/\/start/, (msg) => bot.sendMessage(msg.chat.id, "✅ **ONLINE**", menuUtama));
+bot.onText(/\/start/, (msg) => bot.sendMessage(msg.chat.id, "✅ **SYSTEM ONLINE!**", menuUtama));
