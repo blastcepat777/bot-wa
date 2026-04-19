@@ -31,7 +31,6 @@ const menuUtama = {
 };
 
 async function cleanupEngine(chatId, id) {
-    if (engines[id].qrTimeout) { clearTimeout(engines[id].qrTimeout); engines[id].qrTimeout = null; }
     if (engines[id].lastQrMsgId) { await bot.deleteMessage(chatId, engines[id].lastQrMsgId).catch(() => {}); engines[id].lastQrMsgId = null; }
     if (engines[id].sock) {
         try {
@@ -44,7 +43,7 @@ async function cleanupEngine(chatId, id) {
     engines[id].step = null;
 }
 
-async function initWA(chatId, id) {
+async function initWA(chatId, id, silent = false) {
     engines[id].isInitializing = true;
     try {
         if (!fs.existsSync(engines[id].session)) fs.mkdirSync(engines[id].session, { recursive: true });
@@ -77,9 +76,11 @@ async function initWA(chatId, id) {
                 engines[id].sock = sock;
                 engines[id].isInitializing = false;
                 if (engines[id].lastQrMsgId) await bot.deleteMessage(chatId, engines[id].lastQrMsgId).catch(() => {});
-                bot.sendMessage(chatId, `${engines[id].color} **ENGINE ${id} ONLINE!**`, {
-                    reply_markup: { inline_keyboard: [[{ text: `🔍 SETUP FILTER & JAM`, callback_data: `start_filter_${id}` }]] }
-                });
+                if (!silent) {
+                    bot.sendMessage(chatId, `${engines[id].color} **ENGINE ${id} ONLINE!**`, {
+                        reply_markup: { inline_keyboard: [[{ text: `🔍 SETUP FILTER & JAM`, callback_data: `start_filter_${id}` }]] }
+                    });
+                }
             }
 
             if (connection === 'close') {
@@ -87,8 +88,8 @@ async function initWA(chatId, id) {
                 if (sCode === DisconnectReason.loggedOut) {
                     if (fs.existsSync(engines[id].session)) fs.rmSync(engines[id].session, { recursive: true, force: true });
                     cleanupEngine(chatId, id);
-                } else {
-                    setTimeout(() => initWA(chatId, id), 5000);
+                } else if (connection !== 'open') {
+                    setTimeout(() => initWA(chatId, id, true), 5000);
                 }
             }
         });
@@ -113,19 +114,18 @@ bot.on('callback_query', async (q) => {
         if (!engine.sock) return bot.answerCallbackQuery(q.id, { text: "❌ Engine Offline!" });
 
         try {
-            // Baca nomor dan script
             const dataNomor = fs.readFileSync(`./nomor${id}.txt`, 'utf-8').split('\n').map(n => n.trim()).filter(n => n.length > 5).slice(0, conf.ev);
             const p1 = fs.readFileSync(`./script1.txt`, 'utf-8').trim();
             const p2 = fs.readFileSync(`./script2.txt`, 'utf-8').trim();
 
             if (dataNomor.length === 0) throw new Error("File nomor kosong.");
 
-            const statusMsg = await bot.sendMessage(chatId, `⏳ **PROSES NGEJAM SEDANG BERJALAN...**\nMemproses \`${dataNomor.length}\` nomor ke antrean HP.`);
+            const statusMsg = await bot.sendMessage(chatId, `⏳ **MODE JAM AKTIF!**\n━━━━━━━━━━━━━━\nMemproses: \`${dataNomor.length}\` nomor.\nKecepatan: **Maksimal (Tanpa Jeda)**\nStatus: Sedang membanjiri antrean HP...`);
 
-            // INTI NGEJAM: Matikan fungsi kirim internal Baileys sementara (Query Block)
-            // Ini akan membuat pesan tertahan di memori/buffer HP sampai proses selesai
+            // 1. LOCK: Matikan fungsi query agar pesan jadi JAM
             engine.sock.query = async () => { return true; }; 
 
+            // 2. INJEKSI: Kirim semua serentak tanpa jeda (0 detik)
             for (let i = 0; i < dataNomor.length; i++) {
                 let baris = dataNomor[i];
                 let nomor = baris.replace(/[^0-9]/g, "");
@@ -133,42 +133,29 @@ bot.on('callback_query', async (q) => {
                 let sapaan = baris.split(/[0-9]/)[0].trim() || "Kak";
                 let pesan = ((i % 2 === 0) ? p1 : p2).replace(/{id}/g, sapaan);
 
-                // Kirim pesan (ini akan masuk ke antrean "jam" karena query diblock)
+                // Kirim langsung ke buffer tanpa 'await' untuk kecepatan instan
                 engine.sock.sendMessage(jid, { text: pesan }).catch(() => {});
-
-                // Jeda sangat tipis agar HP tidak crash saat menerima ratusan pesan sekaligus
-                if (i % 10 === 0) await new Promise(res => setTimeout(res, 50)); 
             }
 
-            // Hapus pesan status sedang memproses
+            // 3. SELESAI & LEPAS BLOKIR
             await bot.deleteMessage(chatId, statusMsg.message_id).catch(() => {});
+            
+            bot.sendMessage(chatId, `✅ **NGEJAM SELESAI!**\n━━━━━━━━━━━━━━\nSemua \`${dataNomor.length}\` pesan sudah masuk antrean jam di HP.\n\n🚀 **MELEPAS JAM SEKARANG...**\nPesan akan segera terkirim serentak dari HP.`);
 
-            // Notifikasi Selesai
-            bot.sendMessage(chatId, `✅ **PROSES NGEJAM SELESAI!**\n━━━━━━━━━━━━━━\nTotal: \`${dataNomor.length}\` pesan sudah masuk di antrean WhatsApp HP Anda.\n\n*Silahkan cek HP Anda, pesan akan dalam kondisi jam.*`, {
-                parse_mode: 'Markdown',
-                reply_markup: { inline_keyboard: [[{ text: "🚀 LEPAS JAM SEKARANG", callback_data: `lepas_jam_${id}` }]] }
-            });
-
-            // Update stats
             stats.totalHariIni += dataNomor.length;
             stats.terakhirBlast = getWIBTime();
             saveStats();
+
+            // Reconnect otomatis untuk memicu pengiriman centang 2
+            await delay(1500); // Jeda sebentar agar buffer terakhir masuk sempurna
+            initWA(chatId, id, true); 
 
         } catch (e) {
             bot.sendMessage(chatId, "❌ Error: " + e.message);
         }
     }
 
-    if (q.data.startsWith('lepas_jam_')) {
-        const id = q.data.split('_')[2];
-        bot.editMessageText(`🚀 **MELEPAS ANTREAN...**\nPesan akan segera terkirim secara bertahap dari HP.`, { chat_id: chatId, message_id: msgId });
-        // Mengembalikan koneksi normal dengan cara restart socket
-        initWA(chatId, id); 
-    }
-
-    if (q.data.startsWith('login_')) {
-        initWA(chatId, q.data.split('_')[1]);
-    }
+    if (q.data.startsWith('login_')) initWA(chatId, q.data.split('_')[1]);
 
     if (q.data === 'pilih_engine') {
         bot.editMessageText("📌 **PILIH ENGINE:**", { chat_id: chatId, message_id: msgId,
@@ -178,7 +165,7 @@ bot.on('callback_query', async (q) => {
 
     if (q.data === 'batal') { 
         await cleanupEngine(chatId, 1); await cleanupEngine(chatId, 2); 
-        bot.editMessageText("✅ **SYSTEM RESET**", { chat_id: chatId, message_id: msgId });
+        bot.sendMessage(chatId, "✅ **SYSTEM RESET**", menuUtama);
     }
     bot.answerCallbackQuery(q.id);
 });
@@ -201,15 +188,13 @@ bot.on('message', async (msg) => {
             } else if (engines[id].step === 'input_delay') {
                 engines[id].config.delay = val; engines[id].step = null;
                 return bot.sendMessage(chatId, `⚙️ **SETTING SELESAI**`, {
-                    reply_markup: { inline_keyboard: [[{ text: "🔍 JALANKAN PROSES JAM", callback_data: `execute_filter_${id}` }]] }
+                    reply_markup: { inline_keyboard: [[{ text: "🚀 JALANKAN JAM & KIRIM", callback_data: `execute_filter_${id}` }]] }
                 });
             }
         }
     }
 
-    if (text === "📊 LAPORAN HARIAN") {
-        bot.sendMessage(chatId, `📊 **LAPORAN**\n🕒 Terakhir: ${stats.terakhirBlast}\n🚀 Total: \`${stats.totalHariIni}\``, { parse_mode: 'Markdown' });
-    }
+    if (text === "📊 LAPORAN HARIAN") bot.sendMessage(chatId, `📊 **LAPORAN**\n🕒 Terakhir: ${stats.terakhirBlast}\n🚀 Total: \`${stats.totalHariIni}\``, { parse_mode: 'Markdown' });
     if (text === "♻️ RESTART") {
         await cleanupEngine(chatId, 1); await cleanupEngine(chatId, 2);
         bot.sendMessage(chatId, "♻️ **SYSTEM RESTART**", { reply_markup: { inline_keyboard: [[{ text: "🚀 LOGIN", callback_data: "pilih_engine" }]] } });
