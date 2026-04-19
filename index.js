@@ -57,7 +57,7 @@ async function initWA(chatId, id, msgIdToEdit) {
         const sock = makeWASocket({
             version, auth: state,
             logger: pino({ level: 'silent' }),
-            browser: ["Ubuntu", "Chrome", "122.0.6261.112"],
+            browser: ["Windows", "Chrome", "122.0.6261.112"],
             syncFullHistory: true, 
             printQRInTerminal: false,
             connectTimeoutMs: 60000,
