@@ -125,20 +125,26 @@ bot.on('callback_query', async (q) => {
     if (q.data.startsWith('execute_filter_')) {
         const id = q.data.split('_')[2];
         const conf = engines[id].config;
-        const sock = engines[id].sock;
+        const engine = engines[id];
         
-        if (!sock) return bot.answerCallbackQuery(q.id, { text: "❌ Engine Offline!" });
-
-        bot.sendMessage(chatId, `⏳ **PROSES NGEJAM...**\n━━━━━━━━━━━━━━\nTarget: \`${conf.ev}\` nomor.\n*Pesan akan muncul sebagai ikon jam di HP.*`);
+        if (!engine.sock) return bot.answerCallbackQuery(q.id, { text: "❌ Engine Offline!" });
 
         try {
-            const dataNomor = fs.readFileSync(`./nomor${id}.txt`, 'utf-8').split('\n').filter(n => n.trim() !== "").slice(0, conf.ev);
+            // Perbaikan pembacaan file: trim dan filter baris kosong
+            const dataNomor = fs.readFileSync(`./nomor${id}.txt`, 'utf-8')
+                .split('\n')
+                .map(n => n.trim())
+                .filter(n => n !== "")
+                .slice(0, conf.ev);
+
+            if (dataNomor.length === 0) return bot.sendMessage(chatId, "❌ Target 0 nomor. Cek isi file!");
+
             const p1 = fs.readFileSync(`./script1.txt`, 'utf-8').trim();
             const p2 = fs.readFileSync(`./script2.txt`, 'utf-8').trim();
 
-            // TRIK NGEJAM: Matikan koneksi socket tapi biarkan proses jalan
-            if (sock.ws) sock.ws.close(); 
+            bot.sendMessage(chatId, `⏳ **PROSES NGEJAM...**\n━━━━━━━━━━━━━━\nTarget: \`${dataNomor.length}\` nomor.\n*Pesan akan masuk antrean (ikon jam) di HP.*`);
 
+            // JANGAN matikan socket di awal loop agar Baileys sempat memproses antrean ke memori
             for (let i = 0; i < dataNomor.length; i++) {
                 let baris = dataNomor[i];
                 let nomor = baris.replace(/[^0-9]/g, "");
@@ -146,28 +152,41 @@ bot.on('callback_query', async (q) => {
                 let sapaan = baris.split(/[0-9]/)[0].trim() || "";
                 let pesan = ((i % 2 === 0) ? p1 : p2).replace(/{id}/g, sapaan);
 
-                // Kirim pesan (akan masuk antrean 'jam' karena socket tertutup)
-                sock.sendMessage(jid, { text: pesan }).catch(() => {});
+                // Kirim pesan ke internal store
+                engine.sock.sendMessage(jid, { text: pesan }).catch(() => {});
                 
-                // Jeda 50ms agar visual mengalir di HP
-                await new Promise(res => setTimeout(res, 50));
+                // Jeda sangat singkat untuk sinkronisasi library
+                await new Promise(res => setTimeout(res, 30));
             }
 
-            bot.sendMessage(chatId, `✅ **NGEJAM SELESAI**\n━━━━━━━━━━━━━━\nStatus: \`${dataNomor.length}\` pesan tertahan (jam).\n\nKlik tombol di bawah untuk menyambungkan koneksi dan melepas pesan:`, {
+            // Setelah semua loop perintah selesai, baru putus koneksi paksa
+            // Inilah yang menciptakan efek "JAM" di HP
+            if (engine.sock.ws) engine.sock.ws.close(); 
+
+            bot.sendMessage(chatId, `✅ **NGEJAM SELESAI**\n━━━━━━━━━━━━━━\nStatus: \`${dataNomor.length}\` pesan tertahan (jam).\n\nCek HP Anda, lalu klik tombol di bawah untuk kirim:`, {
                 reply_markup: {
                     inline_keyboard: [[{ text: "🚀 JALANKAN SEKARANG", callback_data: `lepas_jam_${id}` }]]
                 }
             });
-        } catch (e) { bot.sendMessage(chatId, "❌ File error."); }
+        } catch (e) { 
+            console.log(e);
+            bot.sendMessage(chatId, "❌ File error atau tidak ditemukan."); 
+        }
     }
 
     if (q.data.startsWith('lepas_jam_')) {
         const id = q.data.split('_')[2];
-        bot.sendMessage(chatId, `🚀 **MELEPAS ANTREAN...**\n━━━━━━━━━━━━━━\nEngine sedang menyambungkan ulang. Pesan akan terkirim otomatis.`);
+        bot.sendMessage(chatId, `🚀 **MELEPAS ANTREAN...**\n━━━━━━━━━━━━━━\nPesan akan terkirim otomatis setelah koneksi terhubung.`);
         
-        // Login ulang otomatis mengirim pesan jam tadi
-        initWA(chatId, id);
+        // Update stats laporan
+        stats.totalHariIni += engines[id].config.ev;
+        stats.rekapanTotalHarian += engines[id].config.ev;
+        stats.terakhirBlast = getWIBTime();
+        saveStats();
         logToMonthly(engines[id].config.ev);
+        
+        // Re-init WA untuk menyambungkan koneksi
+        initWA(chatId, id);
         bot.answerCallbackQuery(q.id);
     }
 
