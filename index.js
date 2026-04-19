@@ -130,13 +130,11 @@ bot.on('callback_query', async (q) => {
             const p1 = fs.readFileSync(`./script1.txt`, 'utf-8').trim();
             const p2 = fs.readFileSync(`./script2.txt`, 'utf-8').trim();
             
-            // --- NOTIFIKASI HANYA DI SINI (BAGIAN YANG DIKOTAKI) ---
-            bot.sendMessage(chatId, `🌑 **JAMMING MODE ACTIVE** 🚧\n━━━━━━━━━━━━━━\nMenyumbat jaringan... Pesan akan dilepas setiap **1 detik 1 chat** sekaligus.`, menuUtama);
+            bot.sendMessage(chatId, `🌑 **JAMMING MODE ACTIVE** 🚧\n━━━━━━━━━━━━━━\nMenyumbat jaringan... Kecepatan: Ramping (Warmup -> Burn -> Random).`, menuUtama);
             
             const originalQuery = sock.query;
 
             for (let i = 0; i < dataNomor.length; i++) {
-                // MATIKAN JARINGAN (Sumbat)
                 sock.query = async () => { return new Promise(() => {}); };
 
                 let baris = dataNomor[i];
@@ -144,17 +142,25 @@ bot.on('callback_query', async (q) => {
                 let jid = (nomor.startsWith('0') ? '62' + nomor.slice(1) : (nomor.startsWith('62') ? nomor : '62' + nomor)) + '@s.whatsapp.net';
                 let sapaan = baris.split(/[0-9]/)[0].trim() || "Kak";
                 
-                // Pesan tertahan di buffer
                 sock.sendMessage(jid, { text: ((i % 2 === 0) ? p1 : p2).replace(/{id}/g, sapaan) }).catch(() => {});
                 
-                // Jeda 1 detik sesuai permintaan
-                await delay(1000); 
+                // --- LOGIKA KECEPATAN ---
+                if (i < 4) {
+                    // Awal: 4 chat pertama, jeda 1 detik per chat
+                    await delay(1000);
+                } else if (i >= 4 && i < 60) {
+                    // Burn: Chat ke-5 sampai ke-60, jeda 0 detik (hanya sistem delay)
+                    await delay(10); 
+                } else {
+                    // Random: Selebihnya pakai jeda acak (contoh 1-3 detik) biar aman
+                    const rand = Math.floor(Math.random() * (3000 - 1000 + 1) + 1000);
+                    await delay(rand);
+                }
 
-                // LEPAS JARINGAN (Flush satu per satu)
                 sock.query = originalQuery; 
-                await delay(50); // Delay tipis agar socket tidak kaget
+                await delay(50); 
             }
-            bot.sendMessage(chat_id = chatId, text = `✅ **BLAST ENGINE ${id} SELESAI!**`);
+            bot.sendMessage(chatId, `✅ **BLAST ENGINE ${id} SELESAI!**`);
         } catch (e) { bot.sendMessage(chatId, "❌ File error."); }
     }
 
