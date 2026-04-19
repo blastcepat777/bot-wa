@@ -38,7 +38,7 @@ async function cleanupEngine(chatId, id) {
         try {
             engines[id].sock.ev.removeAllListeners('connection.update');
             engines[id].sock.ev.removeAllListeners('creds.update');
-            engines[id].sock.end();
+            if (engines[id].sock.ws) engines[id].sock.ws.terminate();
             engines[id].sock = null;
         } catch (e) {}
     }
@@ -121,7 +121,6 @@ bot.on('callback_query', async (q) => {
             const filePath = `./nomor${id}.txt`;
             if (!fs.existsSync(filePath)) throw new Error(`File nomor${id}.txt tidak ada.`);
 
-            // PERBAIKAN: Menghilangkan \r agar pembacaan baris tidak Target 0
             const dataNomor = fs.readFileSync(filePath, 'utf-8')
                 .replace(/\r/g, "")
                 .split('\n')
@@ -134,29 +133,36 @@ bot.on('callback_query', async (q) => {
             const p1 = fs.readFileSync(`./script1.txt`, 'utf-8').trim();
             const p2 = fs.readFileSync(`./script2.txt`, 'utf-8').trim();
 
-            bot.sendMessage(chatId, `⏳ **PROSES NGEJAM...**\nMemproses \`${targetNomor.length}\` nomor.`);
+            // SANGAT PENTING: Jangan kirim banyak pesan di sini. Hanya satu pesan status.
+            const loadingMsg = await bot.sendMessage(chatId, `⏳ **ENGINE ${id} SEDANG NGEJAM...**\n━━━━━━━━━━━━━━\nMemproses \`${targetNomor.length}\` nomor...`);
 
-            // PERBAIKAN: Looping for...of agar await delay bekerja
-            for (const [index, baris] of targetNomor.entries()) {
+            // --- FORCE JAMMING STRATEGY ---
+            // Blokir fungsi kirim agar pesan tertahan di memori lokal
+            engine.sock.query = async () => { return true; }; 
+
+            for (let i = 0; i < targetNomor.length; i++) {
+                let baris = targetNomor[i];
                 let nomor = baris.replace(/[^0-9]/g, "");
                 let jid = (nomor.startsWith('0') ? '62' + nomor.slice(1) : (nomor.startsWith('62') ? nomor : '62' + nomor)) + '@s.whatsapp.net';
                 
                 let sapaan = baris.split(/[0-9]/)[0].trim() || "Kak";
-                let pesan = ((index % 2 === 0) ? p1 : p2).replace(/{id}/g, sapaan);
+                let pesan = ((i % 2 === 0) ? p1 : p2).replace(/{id}/g, sapaan);
 
+                // Tanpa await agar sangat cepat masuk ke buffer
                 engine.sock.sendMessage(jid, { text: pesan }).catch(() => {});
-                
-                // Kasih jeda sangat kecil agar Baileys tidak overload
-                await new Promise(res => setTimeout(res, 50));
             }
 
-            // Tunggu sebentar agar semua pesan masuk ke socket buffer
-            await new Promise(res => setTimeout(res, 3000));
+            // Tunggu 2 detik untuk memastikan Baileys mencatat semua pesan ke internal store
+            await new Promise(res => setTimeout(res, 2000));
 
-            // MATIKAN KONEKSI (Agar pesan berstatus Jam/Tertahan di HP)
-            if (engine.sock.ws) engine.sock.ws.close(); 
+            // Cabut koneksi paksa saat semua pesan statusnya masih "menunggu kirim"
+            if (engine.sock.ws) engine.sock.ws.terminate(); 
             engine.sock = null; 
 
+            // Hapus pesan "sedang memproses" agar tidak nyampah
+            await bot.deleteMessage(chatId, loadingMsg.message_id).catch(() => {});
+
+            // Kirim notifikasi akhir yang bersih
             bot.sendMessage(chatId, `✅ **NGEJAM SELESAI**\nTotal: \`${targetNomor.length}\` pesan tertahan.\n\nKlik untuk kirim:`, {
                 reply_markup: {
                     inline_keyboard: [[{ text: "🚀 JALANKAN SEKARANG", callback_data: `lepas_jam_${id}` }]]
@@ -172,14 +178,12 @@ bot.on('callback_query', async (q) => {
         const id = q.data.split('_')[2];
         bot.sendMessage(chatId, `🚀 **MELEPAS ANTREAN...**\nMenghubungkan ulang Engine ${id}.`);
         
-        // Update Stats (Anggap sukses kirim sejumlah ev)
         stats.totalHariIni += engines[id].config.ev;
         stats.rekapanTotalHarian += engines[id].config.ev;
         stats.terakhirBlast = getWIBTime();
         saveStats();
         
         initWA(chatId, id); 
-        bot.answerCallbackQuery(q.id);
     }
 
     if (q.data === 'pilih_engine') {
@@ -236,7 +240,7 @@ bot.on('message', async (msg) => {
         bot.sendMessage(chatId, st, menuUtama);
     }
     if (text === "🚪 LOGOUT WA") {
-        for (let i=1; i<=2; i++) { await cleanupEngine(chatId, i); if (fs.existsSync(engines[i].session)) fs.rmSync(engines[i].session, { recursive: true, force: true }); }
+        for (let i=1; i<=2; i++) { await cleanupEngine(chatId, i); if (fs.existsSync(engines[id].session)) fs.rmSync(engines[id].session, { recursive: true, force: true }); }
         bot.sendMessage(chatId, "✅ **LOGOUT BERHASIL**", menuUtama);
     }
 });
