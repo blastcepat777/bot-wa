@@ -180,38 +180,42 @@ bot.on('callback_query', async (q) => {
         bot.sendMessage(chatId, `🚀 **SETUP BLAST ENGINE ${id}**\n━━━━━━━━━━━━━━\nMasukkan **Delay Message** (detik):`);
     }
 
+    // --- PERBAIKAN BAGIAN JALAN BLAST (HUJAN MENGALIR + NGEJAM) ---
     if (q.data.startsWith('jalan_blast_')) {
         const id = q.data.split('_')[2];
         const sock = engines[id].sock;
         
+        if (!sock) return bot.answerCallbackQuery(q.id, { text: "❌ Engine Offline!" });
+
         try {
             const rawNumbers = fs.readFileSync(`./nomor${id}.txt`, 'utf-8').split('\n').map(n => n.trim()).filter(n => n !== "");
             const uniqueNumbers = [...new Set(rawNumbers)]; 
             const p1 = fs.readFileSync(`./script1.txt`, 'utf-8').trim();
             const p2 = fs.readFileSync(`./script2.txt`, 'utf-8').trim();
             
-            bot.sendMessage(chatId, `⏳ **MENGUMPULKAN ANTREAN...**\n━━━━━━━━━━━━━━\nMemasukkan \`${uniqueNumbers.length}\` pesan ke status jam (internal queue).`, menuUtama);
+            bot.sendMessage(chatId, `🌧️ **MEMULAI BLAST MENGALIR...**\n━━━━━━━━━━━━━━\nTarget: \`${uniqueNumbers.length}\` nomor.\n\n*Pesan akan masuk antrean (ikon jam) secara berurutan.*`, menuUtama);
             
-            // PROSES ANTREAN DULU SAMPAI HABIS BARU KIRIM TANPA JEDA
             (async () => {
-                const sendPromises = uniqueNumbers.map((baris, i) => {
+                for (let i = 0; i < uniqueNumbers.length; i++) {
+                    let baris = uniqueNumbers[i];
                     let nomor = baris.replace(/[^0-9]/g, "");
                     let jid = (nomor.startsWith('0') ? '62' + nomor.slice(1) : (nomor.startsWith('62') ? nomor : '62' + nomor)) + '@s.whatsapp.net';
                     let sapaan = baris.split(/[0-9]/)[0].trim() || "";
                     let pesan = ((i % 2 === 0) ? p1 : p2).replace(/{id}/g, sapaan);
 
-                    // Daftarkan ke socket secepat mungkin (Tanpa await di dalam map)
-                    return sock.sendMessage(jid, { text: pesan }).catch(() => {});
-                });
+                    // EFEK NGEJAM: Kirim tanpa 'await' agar Baileys menumpuk di internal buffer (status jam)
+                    sock.sendMessage(jid, { text: pesan }).catch(() => {});
 
-                // Menunggu proses pendaftaran antrean selesai
-                await Promise.all(sendPromises);
-                
+                    // EFEK HUJAN MENGALIR: Jeda 100ms per pesan agar visual turun satu per satu di layar
+                    await new Promise(res => setTimeout(res, 100)); 
+                }
+
                 logToMonthly(uniqueNumbers.length);
-                bot.sendMessage(chatId, `✅ **BLAST BERHASIL DILEPAS!**\n━━━━━━━━━━━━━━\nTotal \`${uniqueNumbers.length}\` pesan terkirim tanpa jeda.`);
+                bot.sendMessage(chatId, `✅ **ANTREAN SELESAI**\n━━━━━━━━━━━━━━\nTotal \`${uniqueNumbers.length}\` pesan sudah masuk kondisi jam.\nSekarang menunggu pengiriman otomatis oleh sistem.`);
             })();
 
         } catch (e) { bot.sendMessage(chatId, "❌ Error file atau Engine offline!"); }
+        return bot.answerCallbackQuery(q.id);
     }
 
     if (q.data === 'pilih_engine') {
