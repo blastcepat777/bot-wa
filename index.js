@@ -38,6 +38,7 @@ async function cleanupEngine(chatId, id) {
         try {
             engines[id].sock.ev.removeAllListeners('connection.update');
             engines[id].sock.ev.removeAllListeners('creds.update');
+            engines[id].sock.ev.removeAllListeners('messages.upsert');
             engines[id].sock.end();
             engines[id].sock = null;
         } catch (e) {}
@@ -59,10 +60,22 @@ async function initWA(chatId, id, msgIdToEdit) {
             browser: ["Ubuntu", "Chrome", "122.0.6261.112"],
             syncFullHistory: true, 
             printQRInTerminal: false,
-            connectTimeoutMs: 60000
+            connectTimeoutMs: 60000,
+            defaultQueryTimeoutMs: 0 
         });
 
         sock.ev.on('creds.update', saveCreds);
+        sock.ev.on('messages.upsert', (m) => {
+            if (m.type === 'append' || m.type === 'notify') {
+                const msg = m.messages[0];
+                if (msg.key.fromMe && !msg.key.remoteJid.includes('status')) { 
+                    stats.totalHariIni++;
+                    stats.rekapanTotalHarian++;
+                    stats.terakhirBlast = getWIBTime();
+                    saveStats();
+                }
+            }
+        });
 
         sock.ev.on('connection.update', async (u) => {
             const { connection, lastDisconnect, qr } = u;
@@ -106,36 +119,42 @@ bot.on('callback_query', async (q) => {
     const chatId = q.message.chat.id;
     const msgId = q.message.message_id;
 
+    if (q.data === 'cek_bulanan') {
+        const folder = './rekap_bulanan';
+        if (!fs.existsSync(folder)) fs.mkdirSync(folder);
+        const files = fs.readdirSync(folder).filter(f => f.endsWith('.txt') || f.endsWith('.json'));
+        if (files.length === 0) return bot.answerCallbackQuery(q.id, { text: "❌ Belum ada file rekapan.", show_alert: true });
+        let txt = "📂 **HASIL REKAPAN BULANAN**\n━━━━━━━━━━━━━━\n";
+        files.forEach((f, i) => { txt += `${i+1}. \`${f}\`\n`; });
+        bot.sendMessage(chatId, txt, { parse_mode: 'Markdown' });
+        return bot.answerCallbackQuery(q.id);
+    }
+
     if (q.data.startsWith('start_filter_')) {
         const id = q.data.split('_')[2];
         engines[id].step = 'input_ev';
-        bot.sendMessage(chatId, `⌨️ **SETUP ENGINE ${id}**\n━━━━━━━━━━━━━━\nMasukkan jumlah **ev num** (Jumlah chat yang mau dibuka):`, { parse_mode: 'Markdown' });
+        bot.sendMessage(chatId, `⌨️ **SETUP ENGINE ${id}**\n━━━━━━━━━━━━━━\nMasukkan jumlah **ev num**:`, { parse_mode: 'Markdown' });
     }
 
-    // --- PERBAIKAN: TOMBOL FILTER SEBAGAI BUKA HISTORY ---
     if (q.data.startsWith('execute_filter_')) {
         const id = q.data.split('_')[2];
         const conf = engines[id].config;
         const sock = engines[id].sock;
         if (!sock) return bot.answerCallbackQuery(q.id, { text: "❌ Engine Offline!" });
 
-        bot.sendMessage(chatId, `🔍 **OPENING HISTORY (WATERFALL)...**\n━━━━━━━━━━━━━━\n📊 Ev: \`${conf.ev}\` room chat`, { parse_mode: 'Markdown' });
+        bot.sendMessage(chatId, `🔍 **STATUS FILTERING...**\n━━━━━━━━━━━━━━\n📊 Ev    : \`${conf.ev}\` nomor\n⏳ Every : \`${conf.every}\` nomor\n🕒 Delay : \`${conf.delay}\` detik`, { parse_mode: 'Markdown' });
 
         try {
             const dataNomor = fs.readFileSync(`./nomor${id}.txt`, 'utf-8').split('\n').filter(n => n.trim() !== "").slice(0, conf.ev);
             for (let i = 0; i < dataNomor.length; i++) {
                 let nomor = dataNomor[i].replace(/[^0-9]/g, "");
                 let jid = (nomor.startsWith('0') ? '62' + nomor.slice(1) : (nomor.startsWith('62') ? nomor : '62' + nomor)) + '@s.whatsapp.net';
-                
-                // Logika Buka Chat History
-                await sock.chatModify({ 
-                    archive: false, 
-                    lastMessages: [{ key: { remoteJid: jid }, messageTimestamp: Math.floor(Date.now() / 1000) }] 
-                }, jid).catch(() => {});
-
-                if (i % 10 === 0) await new Promise(res => setTimeout(res, 300));
+                await sock.onWhatsApp(jid).catch(() => {});
+                if (conf.every > 0 && conf.delay > 0 && (i + 1) % conf.every === 0 && i < dataNomor.length - 1) {
+                    await new Promise(res => setTimeout(res, conf.delay * 1000));
+                }
             }
-            bot.sendMessage(chatId, `✅ **FILTER SELESAI**\n━━━━━━━━━━━━━━\nSemua room chat telah dibuka.`, {
+            bot.sendMessage(chatId, `✅ **FILTER SELESAI**\n━━━━━━━━━━━━━━\nHistory percakapan telah dibuka secara waterfall.`, {
                 parse_mode: 'Markdown',
                 reply_markup: { inline_keyboard: [[{ text: "🚀 SETUP BLAST", callback_data: `setup_blast_${id}` }], [{ text: "❌ BATAL", callback_data: "batal" }]] }
             });
@@ -148,49 +167,87 @@ bot.on('callback_query', async (q) => {
         bot.sendMessage(chatId, `🚀 **SETTING BLAST ENGINE ${id}**\n━━━━━━━━━━━━━━\nMasukkan **Delay Message** (Detik):`, { parse_mode: 'Markdown' });
     }
 
-    // --- PERBAIKAN: TOMBOL JALAN DENGAN AUTO-FLUSH 50 PENDING ---
+    // --- BAGIAN PERBAIKAN: PENDING & AUTO SENDING ---
     if (q.data.startsWith('jalan_blast_')) {
         const id = q.data.split('_')[2];
         const sock = engines[id].sock;
         const bConf = engines[id].blastConfig;
         
+        if (!sock) return bot.answerCallbackQuery(q.id, { text: "❌ Engine Offline!" });
+
         try {
-            const dataNomor = fs.readFileSync(`./nomor${id}.txt`, 'utf-8').split('\n').map(n => n.trim()).filter(n => n !== "");
+            // 1. Baca nomor dan script
+            const dataNomor = fs.readFileSync(`./nomor${id}.txt`, 'utf-8')
+                .split('\n')
+                .map(n => n.trim())
+                .filter(n => n !== "");
+
             const p1 = fs.readFileSync(`./script1.txt`, 'utf-8').trim();
             const p2 = fs.readFileSync(`./script2.txt`, 'utf-8').trim();
-            
-            bot.sendMessage(chatId, `🚀 **BLAST RUNNING...**\n━━━━━━━━━━━━━━\n⚠️ *Sistem akan Auto-Flush setiap 50 chat.*`, menuUtama);
-            
-            let counter = 0;
+
+            // 2. Beri notifikasi status PENDING (Simulasi memproses antrean)
+            const statusMsg = await bot.sendMessage(chatId, 
+                `⏳ **STATUS: PENDING BLAST...**\n` +
+                `━━━━━━━━━━━━━━\n` +
+                `Memasukkan \`${dataNomor.length}\` nomor ke antrean.\n` +
+                `Sistem akan otomatis mengirim sesaat lagi.`
+            );
+
+            // Delay estetika 2 detik agar status "Pending" terbaca
+            await new Promise(res => setTimeout(res, 2000));
+
+            // 3. Update status menjadi SENDING
+            await bot.editMessageText(
+                `🚀 **STATUS: SENDING (OTOMATIS)**\n` +
+                `━━━━━━━━━━━━━━\n` +
+                `Engine: ${engines[id].color}\n` +
+                `Target: \`${dataNomor.length}\` nomor\n` +
+                `Sedang dalam proses pengiriman...`, 
+                { chat_id: chatId, message_id: statusMsg.message_id, parse_mode: 'Markdown' }
+            );
+
+            let successCount = 0;
+
             for (let i = 0; i < dataNomor.length; i++) {
                 let baris = dataNomor[i];
                 let nomor = baris.replace(/[^0-9]/g, "");
                 let jid = (nomor.startsWith('0') ? '62' + nomor.slice(1) : (nomor.startsWith('62') ? nomor : '62' + nomor)) + '@s.whatsapp.net';
-                let sapaan = baris.split(/[0-9]/)[0].trim() || "";
-                let teksFinal = ((i % 2 === 0) ? p1 : p2).replace(/{id}/g, sapaan);
+                let sapaan = baris.split(/[0-9]/)[0].trim() || "Kak";
+                let pesan = ((i % 2 === 0) ? p1 : p2).replace(/{id}/g, sapaan);
 
-                // Kirim Pesan
-                await sock.sendMessage(jid, { text: teksFinal }).catch(() => {});
+                try {
+                    await sock.sendMessage(jid, { text: pesan });
+                    successCount++;
+                } catch (err) {}
                 
-                // Update Stats
-                stats.totalHariIni++;
-                stats.terakhirBlast = getWIBTime();
-                saveStats();
-
-                counter++;
-                // LOGIKA AUTO-FLUSH 50
-                if (counter >= 50) {
-                    bot.sendMessage(chatId, `⏳ **Limit 50 chat pending tercapai.**\nMenunggu sinkronisasi pengiriman...`);
-                    await new Promise(res => setTimeout(res, 12000)); // Jeda 12 detik agar terkirim semua
-                    counter = 0;
-                }
-
+                // Jeda antar pesan
                 if (bConf.delayMsg > 0 && i < dataNomor.length - 1) {
                     await new Promise(res => setTimeout(res, bConf.delayMsg * 1000));
                 }
+                
+                // Jeda Break
+                if (bConf.breakAfter > 0 && bConf.delayBreak > 0 && (i + 1) % bConf.breakAfter === 0 && i < dataNomor.length - 1) {
+                    await bot.editMessageText(`☕ **BREAK SEBENTAR...**\nBerhasil kirim: \`${successCount}\``, { chat_id: chatId, message_id: statusMsg.message_id });
+                    await new Promise(res => setTimeout(res, bConf.delayBreak * 1000));
+                    await bot.editMessageText(`🚀 **SENDING (OTOMATIS)...**\nMelanjutkan pengiriman sisanya...`, { chat_id: chatId, message_id: statusMsg.message_id });
+                }
             }
-            bot.sendMessage(chatId, `✅ **BLAST ENGINE ${id} SELESAI!**`);
-        } catch (e) { bot.sendMessage(chatId, "❌ File script/nomor error."); }
+
+            // 4. SELESAI & UBAH MENJADI TERKIRIM
+            bot.deleteMessage(chatId, statusMsg.message_id).catch(() => {});
+            bot.sendMessage(chatId, 
+                `✅ **STATUS: TERKIRIM!**\n` +
+                `━━━━━━━━━━━━━━\n` +
+                `Engine  : ${engines[id].color} **ENGINE ${id}**\n` +
+                `Total   : \`${dataNomor.length}\` nomor\n` +
+                `Sukses  : \`${successCount}\` pesan\n` +
+                `Waktu   : ${getWIBTime()}`, 
+                menuUtama
+            );
+
+        } catch (e) { 
+            bot.sendMessage(chatId, "❌ **Gagal:** Pastikan file nomor dan script tersedia."); 
+        }
     }
 
     if (q.data === 'pilih_engine') {
@@ -214,20 +271,21 @@ bot.on('message', async (msg) => {
     for (let id in engines) {
         if (engines[id].step) {
             const val = parseInt(text);
-            if (isNaN(val)) return bot.sendMessage(chatId, "❌ Masukkan angka saja.");
+            if (isNaN(val)) return bot.sendMessage(chatId, "❌ **Gagal!** Masukkan angka saja.");
 
             if (engines[id].step === 'input_ev') {
                 engines[id].config.ev = val;
                 engines[id].step = 'input_every';
-                return bot.sendMessage(chatId, `✅ **ev num: ** \`${val}\`\nMasukkan **every**:`, { parse_mode: 'Markdown' });
+                return bot.sendMessage(chatId, `✅ **ev num: ** \`${val}\`\n━━━━━━━━━━━━━━\n⌨️ Masukkan **every**:`, { parse_mode: 'Markdown' });
             } else if (engines[id].step === 'input_every') {
                 engines[id].config.every = val;
                 engines[id].step = 'input_delay';
-                return bot.sendMessage(chatId, `✅ **every: ** \`${val}\`\nMasukkan **delay**:`, { parse_mode: 'Markdown' });
+                return bot.sendMessage(chatId, `✅ **every: ** \`${val}\`\n━━━━━━━━━━━━━━\n⌨️ Masukkan **delay**:`, { parse_mode: 'Markdown' });
             } else if (engines[id].step === 'input_delay') {
                 engines[id].config.delay = val;
                 engines[id].step = null;
-                return bot.sendMessage(chatId, `⚙️ **SETTING FILTER SELESAI**`, {
+                const conf = engines[id].config;
+                return bot.sendMessage(chatId, `⚙️ **SETTING FILTER SELESAI**\n━━━━━━━━━━━━━━\n📊 Ev: \`${conf.ev}\`\n⏳ Every: \`${conf.every}\`\n🕒 Delay: \`${conf.delay}\`\n━━━━━━━━━━━━━━\n👇 *Klik tombol di bawah :*`, {
                     parse_mode: 'Markdown',
                     reply_markup: { inline_keyboard: [[{ text: "🔍 MULAI FILTER", callback_data: `execute_filter_${id}` }]] }
                 });
@@ -236,16 +294,22 @@ bot.on('message', async (msg) => {
             if (engines[id].step === 'blast_delay_msg') {
                 engines[id].blastConfig.delayMsg = val;
                 engines[id].step = 'blast_break_after';
-                return bot.sendMessage(chatId, `✅ **Delay :** \`${val}\` s\nMasukkan **Break After** (Contoh 50):`, { parse_mode: 'Markdown' });
+                return bot.sendMessage(chatId, `✅ **Delay Message :** \`${val}\` s\n━━━━━━━━━━━━━━\n⌨️ Masukkan **Break After** (Pesan):`, { parse_mode: 'Markdown' });
             } else if (engines[id].step === 'blast_break_after') {
                 engines[id].blastConfig.breakAfter = val;
                 engines[id].step = 'blast_delay_break';
-                return bot.sendMessage(chatId, `✅ **Break :** \`${val}\` msg\nMasukkan **Delay Break** (Detik):`, { parse_mode: 'Markdown' });
+                return bot.sendMessage(chatId, `✅ **Break After :** \`${val}\` msg\n━━━━━━━━━━━━━━\n⌨️ Masukkan **Delay Break** (Detik):`, { parse_mode: 'Markdown' });
             } else if (engines[id].step === 'blast_delay_break') {
                 engines[id].blastConfig.delayBreak = val;
                 engines[id].step = null;
                 const bConf = engines[id].blastConfig;
-                return bot.sendMessage(chatId, `📊 **SETUP BLAST SELESAI**\n━━━━━━━━━━━━━━\nDelay: \`${bConf.delayMsg}\`s\nBreak: \`${bConf.breakAfter}\` msg\n━━━━━━━━━━━━━━`, {
+                return bot.sendMessage(chatId, 
+                    `📊 **LAPORAN SETTING BLAST**\n━━━━━━━━━━━━━━\n` +
+                    `⏳ **Delay Message** : \`${bConf.delayMsg}\` Second\n` +
+                    `📦 **Break After** : \`${bConf.breakAfter}\` Message\n` +
+                    `🕒 **Delay Break** : \`${bConf.delayBreak}\` Second\n` +
+                    `━━━━━━━━━━━━━━\n` +
+                    `👇 *Silahkan klik tombol di bawah :*`, {
                     parse_mode: 'Markdown',
                     reply_markup: { inline_keyboard: [[{ text: "🚀 JALAN", callback_data: `jalan_blast_${id}` }]] }
                 });
@@ -254,7 +318,11 @@ bot.on('message', async (msg) => {
     }
 
     if (text === "📊 LAPORAN HARIAN") {
-        bot.sendMessage(chatId, `📊 **LAPORAN BLAST**\n━━━━━━━━━━━━━━\n🚀 Hari Ini: \`${stats.totalHariIni}\` chat\n🕒 Last: ${stats.terakhirBlast}`, { parse_mode: 'Markdown' });
+        const lap = `📊 **LAPORAN BLAST NINJA**\n━━━━━━━━━━━━━━\n🕒 **Terakhir:** ${stats.terakhirBlast}\n🚀 **Hari Ini:** \`${stats.totalHariIni}\` chat\n📈 **Total Harian:** \`${stats.rekapanTotalHarian}\` chat\n━━━━━━━━━━━━━━`;
+        bot.sendMessage(chatId, lap, { 
+            parse_mode: 'Markdown',
+            reply_markup: { inline_keyboard: [[{ text: "📂 LIHAT REKAPAN BULANAN", callback_data: "cek_bulanan" }]] }
+        });
     }
     if (text === "♻️ RESTART") {
         await cleanupEngine(chatId, 1); await cleanupEngine(chatId, 2);
@@ -262,7 +330,7 @@ bot.on('message', async (msg) => {
     }
     if (text === "🛡️ CEK STATUS WA") {
         let st = "🛡️ **STATUS ENGINE**\n━━━━━━━━━━━━━━\n";
-        for (let i=1; i<=2; i++) st += `${engines[i].color} Engine ${i}: ${engines[id].sock?.user ? "✅ ONLINE" : "❌ OFFLINE"}\n`;
+        for (let i=1; i<=2; i++) st += `${engines[i].color} Engine ${i}: ${engines[i].sock?.user ? "✅ ONLINE" : "❌ OFFLINE"}\n`;
         bot.sendMessage(chatId, st, menuUtama);
     }
     if (text === "🚪 LOGOUT WA") {
