@@ -36,8 +36,9 @@ async function initChrome(chatId, id) {
 
     try {
         engines[id].browser = await puppeteer.launch({
-            headless: false, // AGAR MUNCUL VISUALNYA
-            executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', // Sesuaikan path chrome Bos
+            headless: false,
+            // Pastikan path ini sesuai dengan lokasi Chrome di PC Bos
+            executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', 
             userDataDir: engines[id].session,
             args: ['--start-maximized', '--no-sandbox']
         });
@@ -46,23 +47,7 @@ async function initChrome(chatId, id) {
         engines[id].page = pages[0];
         await engines[id].page.goto('https://web.whatsapp.com', { waitUntil: 'networkidle2', timeout: 0 });
 
-        // Cek apakah perlu scan QR
-        const isLogged = await engines[id].page.evaluate(() => {
-            return !!document.querySelector('canvas');
-        }).catch(() => false);
-
-        if (isLogged) {
-            // Ambil screenshot QR untuk dikirim ke Telegram
-            const canvas = await engines[id].page.$('canvas');
-            if (canvas) {
-                const buffer = await canvas.screenshot();
-                await bot.sendPhoto(chatId, buffer, { 
-                    caption: `📸 **SCAN QR ENGINE ${id}**\nSegera scan dari HP Bos!` 
-                });
-            }
-        }
-
-        bot.sendMessage(chatId, `${engines[id].color} **ENGINE ${id} READY!**`, {
+        bot.sendMessage(chatId, `${engines[id].color} **ENGINE ${id} READY!**\nJika diminta scan, silakan scan langsung di jendela Chrome yang muncul.`, {
             reply_markup: { inline_keyboard: [[{ text: `🔍 MULAI FILTER`, callback_data: `start_filter_${id}` }]] }
         });
 
@@ -71,41 +56,52 @@ async function initChrome(chatId, id) {
     }
 }
 
-async function sendMessagePuppeteer(id, nomor, pesan) {
-    const page = engines[id].page;
-    try {
-        const url = `https://web.whatsapp.com/send?phone=${nomor}&text=${encodeURIComponent(pesan)}`;
-        await page.goto(url, { waitUntil: 'networkidle2', timeout: 0 });
-        
-        // Tunggu tombol kirim dan klik
-        await page.waitForSelector('span[data-icon="send"]', { timeout: 30000 });
-        await page.click('span[data-icon="send"]');
-        
-        // Tunggu sebentar biar pesan terkirim (icon jam hilang)
-        await page.waitForTimeout(2000); 
-        return true;
-    } catch (e) {
-        return false;
-    }
-}
-
 // --- TELEGRAM LOGIC ---
 bot.on('callback_query', async (q) => {
     const chatId = q.message.chat.id;
-    const id = q.data.split('_')[q.data.split('_').length - 1];
+    const data = q.data;
 
-    if (q.data.startsWith('login_')) {
+    if (data === 'pilih_engine') {
+        bot.sendMessage(chatId, "📌 **PILIH ENGINE:**", {
+            reply_markup: { inline_keyboard: [[{ text: "🌪 ENGINE 1", callback_data: "login_1" }, { text: "🌊 ENGINE 2", callback_data: "login_2" }]] }
+        });
+    }
+
+    if (data.startsWith('login_')) {
+        const id = data.split('_')[1];
         initChrome(chatId, id);
     }
 
-    if (q.data.startsWith('jalan_blast_')) {
+    if (data.startsWith('start_filter_')) {
+        const id = data.split('_')[2];
+        engines[id].step = 'input_ev';
+        bot.sendMessage(chatId, `⌨️ **SETUP ENGINE ${id}**\n━━━━━━━━━━━━━━\nMasukkan jumlah **ev num**:`);
+    }
+
+    if (data.startsWith('execute_filter_')) {
+        const id = data.split('_')[2];
+        bot.sendMessage(chatId, `✅ **FILTER SELESAI**`, {
+            reply_markup: { inline_keyboard: [[{ text: "🚀 SETUP BLAST", callback_data: `setup_blast_${id}` }]] }
+        });
+    }
+
+    if (data.startsWith('setup_blast_')) {
+        const id = data.split('_')[2];
+        engines[id].step = 'blast_delay_msg';
+        bot.sendMessage(chatId, `🚀 **SETTING BLAST ENGINE ${id}**\nMasukkan **Delay Message** (Detik):`);
+    }
+
+    if (data.startsWith('jalan_blast_')) {
+        const id = data.split('_')[2];
         const bConf = engines[id].blastConfig;
+        const page = engines[id].page;
+
         try {
             const dataNomor = fs.readFileSync(`./nomor${id}.txt`, 'utf-8').split('\n').map(n => n.trim()).filter(n => n !== "");
             const p1 = fs.readFileSync(`./script1.txt`, 'utf-8').trim();
             const p2 = fs.readFileSync(`./script2.txt`, 'utf-8').trim();
 
-            bot.sendMessage(chatId, `🚀 **BLASTING STARTED (VISUAL MODE)...**`, menuUtama);
+            bot.sendMessage(chatId, `🚀 **BLASTING STARTED...**`, menuUtama);
 
             for (let i = 0; i < dataNomor.length; i++) {
                 let baris = dataNomor[i];
@@ -113,43 +109,73 @@ bot.on('callback_query', async (q) => {
                 let sapaan = baris.split(/[0-9]/)[0].trim() || "";
                 let teksFinal = ((i % 2 === 0) ? p1 : p2).replace(/{id}/g, sapaan);
 
-                const sukses = await sendMessagePuppeteer(id, nomor, teksFinal);
-                
-                if (sukses) {
+                // Proses kirim via Chrome
+                await page.goto(`https://web.whatsapp.com/send?phone=${nomor}&text=${encodeURIComponent(teksFinal)}`, { waitUntil: 'networkidle2', timeout: 0 });
+                try {
+                    await page.waitForSelector('span[data-icon="send"]', { timeout: 5000 });
+                    await page.click('span[data-icon="send"]');
                     stats.totalHariIni++;
                     saveStats();
+                } catch (e) {
+                    console.log("Gagal kirim ke " + nomor);
                 }
 
-                // Delay antar pesan
                 await new Promise(res => setTimeout(res, bConf.delayMsg * 1000));
-
-                // Jeda Break
-                if (bConf.breakAfter > 0 && (i + 1) % bConf.breakAfter === 0) {
-                    bot.sendMessage(chatId, `☕ **BREAK SEJENAK...** (${bConf.delayBreak}s)`);
-                    await new Promise(res => setTimeout(res, bConf.delayBreak * 1000));
-                }
             }
-            bot.sendMessage(chatId, `✅ **BLAST SELESAI!**`);
+            bot.sendMessage(chatId, `✅ **SELESAI!**`);
         } catch (e) {
             bot.sendMessage(chatId, "❌ Error: " + e.message);
         }
     }
-    // ... Tambahkan callback_data lainnya (batal, start_filter, dll) sesuai script lama Bos
 });
 
-// --- HANDLE INPUT ANGKA ---
+// --- MESSAGE HANDLING ---
 bot.on('message', async (msg) => {
     const text = msg.text;
     const chatId = msg.chat.id;
 
     if (text === "♻️ RESTART") {
-        for (let i in engines) if (engines[i].browser) await engines[i].browser.close();
-        bot.sendMessage(chatId, "✅ **SYSTEM RESTARTED**", {
-            reply_markup: { inline_keyboard: [[{ text: "🚀 LOGIN ENGINE 1", callback_data: "login_1" }]] }
+        bot.sendMessage(chatId, "♻️ **SYSTEM RESTART**", {
+            reply_markup: { inline_keyboard: [[{ text: "🚀 LOGIN", callback_data: "pilih_engine" }]] }
         });
     }
-    
-    // ... Handle Step input_ev, input_delay, dll sama seperti script lama Bos
+
+    // Handle Input Steps
+    for (let id in engines) {
+        if (engines[id].step) {
+            const val = parseInt(text);
+            if (engines[id].step === 'input_ev') {
+                engines[id].config.ev = val;
+                engines[id].step = 'input_every';
+                bot.sendMessage(chatId, `✅ **ev num: ${val}**\nMasukkan **every**:`);
+            } else if (engines[id].step === 'input_every') {
+                engines[id].config.every = val;
+                engines[id].step = 'input_delay';
+                bot.sendMessage(chatId, `✅ **every: ${val}**\nMasukkan **delay**:`);
+            } else if (engines[id].step === 'input_delay') {
+                engines[id].config.delay = val;
+                engines[id].step = null;
+                bot.sendMessage(chatId, `⚙️ **SETTING SELESAI**`, {
+                    reply_markup: { inline_keyboard: [[{ text: "🔍 MULAI FILTER", callback_data: `execute_filter_${id}` }]] }
+                });
+            } else if (engines[id].step === 'blast_delay_msg') {
+                engines[id].blastConfig.delayMsg = val;
+                engines[id].step = 'blast_break_after';
+                bot.sendMessage(chatId, `✅ **Delay: ${val}s**\nMasukkan **Break After**:`);
+            } else if (engines[id].step === 'blast_break_after') {
+                engines[id].blastConfig.breakAfter = val;
+                engines[id].step = 'blast_delay_break';
+                bot.sendMessage(chatId, `✅ **Break: ${val} msg**\nMasukkan **Delay Break**:`);
+            } else if (engines[id].step === 'blast_delay_break') {
+                engines[id].blastConfig.delayBreak = val;
+                engines[id].step = null;
+                bot.sendMessage(chatId, `📊 **SETTING BLAST SIAP**`, {
+                    reply_markup: { inline_keyboard: [[{ text: "🚀 JALAN", callback_data: `jalan_blast_${id}` }]] }
+                });
+            }
+            return;
+        }
+    }
 });
 
-bot.onText(/\/start/, (msg) => bot.sendMessage(msg.chat.id, "✅ **SYSTEM CHROME ONLINE!**", menuUtama));
+bot.onText(/\/start/, (msg) => bot.sendMessage(msg.chat.id, "✅ **SYSTEM ONLINE!**", menuUtama));
